@@ -19,7 +19,18 @@
   # languages.rust.enable = true;
 
   # https://devenv.sh/processes/
-  # processes.dev.exec = "${lib.getExe pkgs.watchexec} -n -- ls -la";
+  processes.signaling-server.exec = ''
+    docker rm -f y-webrtc-signaling 2>/dev/null || true
+    docker run --rm --name y-webrtc-signaling \
+      -p 4444:4444 \
+      -e PORT=4444 \
+      funnyzak/y-webrtc-signaling:latest
+  '';
+
+  processes.cloudflare-tunnel.exec = ''
+    cd ${config.env.DEVENV_ROOT}
+    ${lib.getExe pkgs.cloudflared} tunnel --config ./cloudflared/config.yml run
+  '';
 
   # https://devenv.sh/services/
   # services.postgres.enable = true;
@@ -29,23 +40,15 @@
     echo hello from $GREET
   '';
 
-  scripts.signaling-start.exec = ''
+  scripts.start-services.exec = ''
     echo "Starting y-webrtc signaling server and Cloudflare Tunnel..."
-    docker compose up -d
-    echo "Services started! Check logs with: docker compose logs -f"
+    echo "Use 'devenv up' to start all services"
   '';
 
-  scripts.signaling-stop.exec = ''
-    echo "Stopping services..."
-    docker compose down
-  '';
-
-  scripts.signaling-logs.exec = ''
-    docker compose logs -f
-  '';
-
-  scripts.signaling-status.exec = ''
-    docker compose ps
+  scripts.cleanup-docker.exec = ''
+    echo "Cleaning up any leftover Docker containers..."
+    docker rm -f y-webrtc-signaling 2>/dev/null || true
+    echo "Done!"
   '';
 
   # https://devenv.sh/basics/
@@ -53,10 +56,8 @@
     echo "🔮 Seance Coordinator Development Environment"
     echo ""
     echo "Available commands:"
-    echo "  signaling-start   - Start signaling server and tunnel"
-    echo "  signaling-stop    - Stop all services"
-    echo "  signaling-logs    - View service logs"
-    echo "  signaling-status  - Check service status"
+    echo "  devenv up           - Start all services (signaling + tunnel)"
+    echo "  cleanup-docker      - Remove leftover Docker containers"
     echo ""
     echo "📖 See SETUP.md for Cloudflare Tunnel configuration"
   '';
