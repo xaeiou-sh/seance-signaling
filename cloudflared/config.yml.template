@@ -1,10 +1,10 @@
 tunnel: YOUR_TUNNEL_ID
-credentials-file: /etc/cloudflared/credentials.json
+credentials-file: ./cloudflared/credentials.json
 
 ingress:
   # Route traffic to the signaling server
-  - hostname: YOUR_TUNNEL_HOSTNAME
-    service: http://signaling:4444
+  - hostname: seance-signaling-test.mycor.io
+    service: http://localhost:4444
 
   # Catch-all rule (required)
   - service: http_status:404
