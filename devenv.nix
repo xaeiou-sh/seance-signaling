@@ -1,14 +1,18 @@
-{ pkgs, lib, config, inputs, ... }:
-
 {
+  pkgs,
+  lib,
+  config,
+  inputs,
+  ...
+}: {
   # https://devenv.sh/basics/
   env.GREET = "devenv";
 
   # https://devenv.sh/packages/
-  packages = [
-    pkgs.git
-    pkgs.docker-compose
-    pkgs.cloudflared
+  packages = with pkgs; [
+    git
+    cloudflared
+    fermyon-spin
   ];
 
   # https://devenv.sh/languages/
