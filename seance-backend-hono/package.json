@@ -1,5 +1,5 @@
 {
-  "name": "seance-backend-spin",
+  "name": "seance-backend-hono",
   "version": "1.0.0",
   "description": "Seance Update Server - Desktop updates and web app",
   "type": "module",

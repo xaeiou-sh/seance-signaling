@@ -34,7 +34,7 @@
   '';
 
   processes.update-server.exec = ''
-    cd ${config.env.DEVENV_ROOT}/seance-backend-spin
+    cd ${config.env.DEVENV_ROOT}/seance-backend-hono
     npm run start
   '';
 
