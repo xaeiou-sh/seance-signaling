@@ -13,7 +13,7 @@
     git
     cloudflared
     fermyon-spin
-    coturn
+    # coturn
   ];
 
   # https://devenv.sh/languages/
