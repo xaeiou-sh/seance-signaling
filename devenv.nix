@@ -12,7 +12,7 @@
   packages = with pkgs; [
     git
     cloudflared
-    fermyon-spin
+    nodejs_22
     # coturn
   ];
 
@@ -35,7 +35,7 @@
 
   processes.update-server.exec = ''
     cd ${config.env.DEVENV_ROOT}/seance-backend-spin
-    ${lib.getExe pkgs.fermyon-spin} up --listen 127.0.0.1:3000
+    npm run start
   '';
 
   # https://devenv.sh/services/
