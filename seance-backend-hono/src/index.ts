@@ -1,6 +1,7 @@
 // Seance Backend Server
 // Serves desktop app updates + web app
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { swaggerUI } from '@hono/swagger-ui';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, cpSync } from 'fs';
 import { join, extname } from 'path';
@@ -8,7 +9,7 @@ import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import { createPublicKey, verify } from 'crypto';
 
-const app = new Hono();
+const app = new OpenAPIHono();
 
 // Load configuration from config.yml
 function loadConfig() {
@@ -105,13 +106,108 @@ function readReleaseFile(filePath: string): Buffer | null {
   }
 }
 
-// Health check
+// Health check (plain route, not OpenAPI)
 app.get('/', (c) => c.text('Seance Update Server'));
 
-// Deployment endpoint for CI/CD
-// Expects: X-Signature header with Ed25519 signature (base64)
-// Body: JSON with { files: [{ path: string, content: string (base64) }], clearWeb?: boolean }
-app.post('/deploy', async (c) => {
+// Define Zod schemas for OpenAPI
+const DeployFileSchema = z.object({
+  path: z.string().openapi({ example: 'releases/darwin-arm64/Seance-1.0.0-mac.zip' }),
+  content: z.string().openapi({ example: 'base64-encoded-content...', description: 'Base64-encoded file content' }),
+});
+
+const DeployRequestSchema = z.object({
+  files: z.array(DeployFileSchema),
+  clearWeb: z.boolean().optional().openapi({ description: 'Clear web directory before deployment' }),
+});
+
+const DeployResponseSchema = z.object({
+  success: z.boolean(),
+  filesDeployed: z.number(),
+  timestamp: z.string().openapi({ example: '2026-01-11T00:00:00.000Z' }),
+});
+
+const ErrorResponseSchema = z.object({
+  error: z.string(),
+  message: z.string().optional(),
+});
+
+const VersionResponseSchema = z.object({
+  web: z.object({
+    version: z.string(),
+    deployed: z.string(),
+  }),
+  desktop: z.object({
+    version: z.string(),
+    released: z.string(),
+    downloadUrl: z.string(),
+  }),
+});
+
+// Define OpenAPI routes
+const deployRoute = createRoute({
+  method: 'post',
+  path: '/deploy',
+  summary: 'Deploy artifacts from CI/CD',
+  description: 'Accepts signed deployment payloads from GitHub Actions. Requires Ed25519 signature in X-Signature header.',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: DeployRequestSchema,
+        },
+      },
+    },
+    headers: z.object({
+      'x-signature': z.string().openapi({ description: 'Ed25519 signature of request body (base64)' }),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: DeployResponseSchema,
+        },
+      },
+      description: 'Deployment successful',
+    },
+    401: {
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: 'Missing or invalid signature',
+    },
+  },
+});
+
+const versionRoute = createRoute({
+  method: 'get',
+  path: '/updates/api/version.json',
+  summary: 'Get version information',
+  description: 'Returns current versions for web and desktop apps',
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: VersionResponseSchema,
+        },
+      },
+      description: 'Version information',
+    },
+    500: {
+      content: {
+        'application/json': {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: 'Version data not found',
+    },
+  },
+});
+
+// Register OpenAPI routes
+app.openapi(deployRoute, async (c) => {
   const signatureHeader = c.req.header('X-Signature');
 
   if (!signatureHeader) {
@@ -296,8 +392,8 @@ app.get('/updates/releases/darwin-arm64/:filename', (c) => {
   });
 });
 
-// Version API for web
-app.get('/updates/api/version.json', (c) => {
+// Version API for web (OpenAPI route)
+app.openapi(versionRoute, (c) => {
   const versionData = getVersionData();
 
   if (!versionData) {
@@ -306,6 +402,23 @@ app.get('/updates/api/version.json', (c) => {
 
   return c.json(versionData);
 });
+
+// Generate OpenAPI documentation
+app.doc('/doc', {
+  openapi: '3.0.0',
+  info: {
+    title: 'Seance Backend API',
+    version: '1.0.0',
+    description: 'Backend API for Seance desktop updates and web app hosting',
+  },
+  servers: [
+    { url: 'http://localhost:3000', description: 'Local server' },
+    { url: 'https://backend.seance.dev', description: 'Production server' },
+  ],
+});
+
+// Mount Swagger UI
+app.get('/ui', swaggerUI({ url: '/doc' }));
 
 // Serve static files from web/ directory with SPA fallback
 app.use('/*', serveStatic({ root: './web' }));

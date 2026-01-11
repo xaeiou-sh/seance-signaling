@@ -26,6 +26,10 @@ devenv up
 # Verify services
 curl https://backend.seance.dev
 open https://app.seance.dev
+
+# API documentation (Swagger UI)
+open http://localhost:3000/ui
+open https://backend.seance.dev/ui
 ```
 
 ## CI/CD Architecture
@@ -86,6 +90,16 @@ See [SETUP.md](SETUP.md) for complete instructions.
 - Even if backend is compromised, attacker can't forge deployments
 - Multiple builder keys supported for rotation
 - Each deployment is cryptographically signed
+
+## API Documentation
+
+Swagger UI is available for debugging and exploring the API:
+
+- **Local:** http://localhost:3000/ui
+- **Production:** https://backend.seance.dev/ui
+- **OpenAPI spec:** http://localhost:3000/doc
+
+All endpoints are documented with request/response schemas, making it easy to test the deployment endpoint and understand the update server API.
 
 ## Requirements
 
