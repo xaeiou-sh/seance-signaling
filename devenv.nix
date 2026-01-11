@@ -13,6 +13,7 @@
     git
     cloudflared
     fermyon-spin
+    coturn
   ];
 
   # https://devenv.sh/languages/
@@ -30,6 +31,11 @@
   processes.cloudflare-tunnel.exec = ''
     cd ${config.env.DEVENV_ROOT}
     ${lib.getExe pkgs.cloudflared} tunnel --config ./cloudflared/config.yml run
+  '';
+
+  processes.update-server.exec = ''
+    cd ${config.env.DEVENV_ROOT}/seance-backend-spin
+    ${lib.getExe pkgs.fermyon-spin} up --listen 127.0.0.1:3000
   '';
 
   # https://devenv.sh/services/

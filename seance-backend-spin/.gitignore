@@ -3,3 +3,13 @@ dist
 target
 .spin/
 build/
+
+# Release files (managed by CI)
+releases/*.zip
+releases/darwin-arm64/*.zip
+releases/version.json
+releases/latest-mac.yml
+
+# Web app build (managed by CI)
+web/*
+!web/.gitkeep
