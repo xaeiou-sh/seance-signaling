@@ -1,96 +1,95 @@
-# Seance Coordinator
+# Seance Backend Infrastructure
 
-A self-hosted WebRTC signaling server for [Seance Desktop](https://github.com/yourusername/seance-desktop), exposed securely via Cloudflare Tunnel.
+Backend services for Seance desktop app auto-updates and web app hosting.
 
-## What is this?
+## What's Here
 
-This repository provides the infrastructure for real-time peer-to-peer collaboration in Seance Desktop. It runs:
+This repository runs the backend infrastructure for Seance:
 
-- **y-webrtc signaling server** - Helps peers discover each other for WebRTC connections
-- **Cloudflare Tunnel** - Securely exposes the server to the internet with automatic HTTPS
+- **WebRTC signaling server** (port 4444) - Peer discovery for real-time collaboration
+- **Update server** (port 3000) - Desktop app auto-updates via electron-updater
+- **Web app hosting** (port 3000) - Static hosting for Seance web version
+- **Cloudflare Tunnel** - Secure HTTPS access to local services
+
+All exposed via Cloudflare Tunnel at:
+- `backend.seance.dev/signaling` - WebRTC signaling
+- `backend.seance.dev/updates` - Desktop app updates
+- `app.seance.dev` - Web app
 
 ## Quick Start
 
 ```bash
-# 1. Enter the development environment (if using devenv)
-direnv allow
+# Start all services
+cd /Users/nicole/Documents/seance-signaling
+devenv up
 
-# 2. Follow the setup guide to configure Cloudflare Tunnel
-cat SETUP.md
-
-# 3. Start the services
-signaling-start
-
-# 4. Check status
-signaling-status
+# Verify services
+curl https://backend.seance.dev
+open https://app.seance.dev
 ```
 
-## Why Cloudflare Tunnel?
+## CI/CD Architecture
 
-- **No port forwarding required** - Works behind NAT/firewall
-- **Free SSL/TLS** - Automatic HTTPS/WSS support
-- **No hosting costs** - Run on your local machine
-- **Easy management** - Simple configuration and monitoring
-- **Great learning experience** - Understand modern edge networking
+```
+GitHub Actions (macos-14)
+    ↓ builds desktop + web
+    ↓ signs with Ed25519 key
+    ↓ POST /deploy
+seance-backend-hono (localhost:3000)
+    ↓ Cloudflare Tunnel
+backend.seance.dev + app.seance.dev
+```
+
+**Key features:**
+- Ed25519 cryptographic signatures (no shared secrets)
+- Public keys committed to repo (safe)
+- GitHub-hosted runners (zero maintenance)
+- Desktop auto-updates every 10 minutes
+- Zero .env complexity
 
 ## Project Structure
 
 ```
 .
-├── docker-compose.yml              # Service orchestration
-├── cloudflared/
-│   ├── config.yml.template         # Tunnel configuration template
-│   ├── config.yml                  # Your actual config (git-ignored)
-│   └── credentials.json            # Tunnel credentials (git-ignored)
-├── devenv.nix                      # Development environment
-└── SETUP.md                        # Detailed setup instructions
+├── config.yml                      # Builder keys + server config (committed)
+├── seance-backend-hono/            # Update server + web hosting
+│   └── src/index.ts                # Hono server with /deploy endpoint
+├── cloudflared/                    # Cloudflare Tunnel config
+├── .keys/                          # Private keys (gitignored)
+├── scripts/generate-builder-keys.sh # Key generation helper
+└── SETUP.md                        # Complete setup guide
 ```
 
-## Usage
+## Setup
 
-Once configured, your signaling server will be available at your chosen hostname (e.g., `wss://signaling.yourdomain.com`).
+See [SETUP.md](SETUP.md) for complete instructions.
 
-Use it in your Seance Desktop configuration:
+**TL;DR:**
+1. Verify `config.yml` has builder public key
+2. Add `BUILDER_PRIVATE_KEY` to GitHub Secrets
+3. Run `devenv up`
+4. Push to trigger deployment
 
-```javascript
-{
-  signaling: ['wss://signaling.yourdomain.com']
-}
-```
+## Deployment Flow
 
-## Commands (in devenv shell)
+1. Push code to GitHub
+2. GitHub Actions builds on `macos-14` runner
+3. Signs deployment payload with Ed25519 private key
+4. POSTs artifacts to `backend.seance.dev/deploy`
+5. Backend verifies signature with public key from `config.yml`
+6. Updates served at `backend.seance.dev/updates`
+7. Web app served at `app.seance.dev`
 
-- `signaling-start` - Start all services
-- `signaling-stop` - Stop all services
-- `signaling-logs` - View logs
-- `signaling-status` - Check service status
+## Security
 
-## Documentation
-
-See [SETUP.md](SETUP.md) for detailed setup instructions including:
-- Installing and configuring Cloudflare Tunnel
-- Creating DNS records
-- Testing the connection
-- Troubleshooting
-
-## Architecture
-
-```
-Seance Desktop (Browser)
-         ↓ wss://
-    Cloudflare Edge
-         ↓ tunnel
-    cloudflared container
-         ↓ http://
-    y-webrtc signaling server
-```
+- **Backend only stores public keys** (in `config.yml`)
+- Even if backend is compromised, attacker can't forge deployments
+- Multiple builder keys supported for rotation
+- Each deployment is cryptographically signed
 
 ## Requirements
 
-- Docker & Docker Compose
-- Cloudflare account (free tier is fine)
-- Domain managed by Cloudflare (or use free `.cfargotunnel.com` subdomain)
-
-## License
-
-MIT
+- Node.js 22+
+- devenv (or manually run services)
+- Cloudflare account + domain
+- GitHub repository with Actions enabled

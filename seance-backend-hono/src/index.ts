@@ -2,10 +2,61 @@
 // Serves desktop app updates + web app
 import { Hono } from 'hono';
 import { serveStatic } from '@hono/node-server/serve-static';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, cpSync } from 'fs';
 import { join, extname } from 'path';
+import { createWriteStream } from 'fs';
+import { pipeline } from 'stream/promises';
+import { createPublicKey, verify } from 'crypto';
 
 const app = new Hono();
+
+// Load configuration from config.yml
+function loadConfig() {
+  try {
+    const configPath = join(process.cwd(), '..', 'config.yml');
+    if (!existsSync(configPath)) {
+      throw new Error(`config.yml not found at ${configPath}`);
+    }
+
+    const configContent = readFileSync(configPath, 'utf-8');
+    const lines = configContent.split('\n');
+
+    let inBuilderKeys = false;
+    const builderKeys: string[] = [];
+
+    for (const line of lines) {
+      if (line.trim() === 'builder_keys:') {
+        inBuilderKeys = true;
+        continue;
+      }
+
+      if (inBuilderKeys) {
+        // Stop parsing if we hit a non-indented line (next section)
+        if (line.length > 0 && !line.startsWith(' ') && !line.startsWith('\t')) {
+          break;
+        }
+
+        // Parse array items (lines starting with "  - ")
+        const match = line.match(/^\s*-\s+(.+)$/);
+        if (match) {
+          builderKeys.push(match[1].trim());
+        }
+      }
+    }
+
+    if (builderKeys.length === 0) {
+      throw new Error('No builder_keys found in config.yml');
+    }
+
+    return { builderKeys };
+  } catch (error) {
+    console.error('[Config] Failed to load config.yml:', error);
+    throw error;
+  }
+}
+
+const config = loadConfig();
+console.log(`[Config] Loaded ${config.builderKeys.length} builder key(s)`);
 
 // MIME type mapping for static files
 const MIME_TYPES: Record<string, string> = {
@@ -56,6 +107,145 @@ function readReleaseFile(filePath: string): Buffer | null {
 
 // Health check
 app.get('/', (c) => c.text('Seance Update Server'));
+
+// Deployment endpoint for CI/CD
+// Expects: X-Signature header with Ed25519 signature (base64)
+// Body: JSON with { files: [{ path: string, content: string (base64) }], clearWeb?: boolean }
+app.post('/deploy', async (c) => {
+  const signatureHeader = c.req.header('X-Signature');
+
+  if (!signatureHeader) {
+    return c.json({ error: 'Missing signature' }, 401);
+  }
+
+  // Get raw body for signature verification
+  const bodyText = await c.req.text();
+  const signature = Buffer.from(signatureHeader, 'base64');
+
+  // Try verifying with each configured builder key
+  let verified = false;
+  let lastError: Error | null = null;
+
+  for (const builderPublicKey of config.builderKeys) {
+    try {
+      // Parse the public key (supports both SSH and PEM formats)
+      let publicKey;
+      if (builderPublicKey.startsWith('ssh-ed25519')) {
+        // SSH format: ssh-ed25519 AAAAC3... comment
+        const parts = builderPublicKey.split(' ');
+        if (parts.length < 2) {
+          throw new Error('Invalid SSH public key format');
+        }
+        const keyData = Buffer.from(parts[1], 'base64');
+        // Skip SSH wire format header (19 bytes for Ed25519)
+        const rawKey = keyData.slice(19);
+        publicKey = createPublicKey({
+          key: Buffer.concat([
+            Buffer.from('302a300506032b6570032100', 'hex'), // ASN.1 header for Ed25519
+            rawKey
+          ]),
+          format: 'der',
+          type: 'spki'
+        });
+      } else {
+        // PEM format
+        publicKey = createPublicKey(builderPublicKey);
+      }
+
+      // Verify signature
+      const isValid = verify(
+        null, // Ed25519 doesn't need digest algorithm
+        Buffer.from(bodyText),
+        publicKey,
+        signature
+      );
+
+      if (isValid) {
+        verified = true;
+        console.log('[Deploy] Signature verified successfully');
+        break;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Unknown error');
+      // Try next key
+      continue;
+    }
+  }
+
+  if (!verified) {
+    console.error('[Deploy] Invalid signature (tried all keys)');
+    if (lastError) {
+      console.error('[Deploy] Last error:', lastError);
+    }
+    return c.json({ error: 'Invalid signature' }, 401);
+  }
+
+  try {
+    // Parse body (already read as text for signature verification)
+    const body = JSON.parse(bodyText);
+    const { files, clearWeb } = body;
+
+    if (!Array.isArray(files)) {
+      return c.json({ error: 'Invalid request: files must be an array' }, 400);
+    }
+
+    console.log(`[Deploy] Deploying ${files.length} files`);
+
+    // Clear web directory if requested
+    if (clearWeb) {
+      const webPath = join(process.cwd(), 'web');
+      if (existsSync(webPath)) {
+        rmSync(webPath, { recursive: true });
+        console.log('[Deploy] Cleared web directory');
+      }
+      mkdirSync(webPath, { recursive: true });
+      // Keep .gitkeep
+      writeFileSync(join(webPath, '.gitkeep'), '');
+    }
+
+    // Write each file
+    for (const file of files) {
+      if (!file.path || !file.content) {
+        console.warn('[Deploy] Skipping invalid file entry:', file);
+        continue;
+      }
+
+      const fullPath = join(process.cwd(), file.path);
+
+      // Security: prevent path traversal
+      const normalizedPath = join(process.cwd(), file.path);
+      if (!normalizedPath.startsWith(process.cwd())) {
+        console.error('[Deploy] Path traversal attempt:', file.path);
+        return c.json({ error: 'Invalid file path' }, 400);
+      }
+
+      // Create directory if needed
+      const dir = join(fullPath, '..');
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+
+      // Decode base64 and write file
+      const content = Buffer.from(file.content, 'base64');
+      writeFileSync(fullPath, content);
+      console.log(`[Deploy] Wrote ${file.path} (${content.length} bytes)`);
+    }
+
+    console.log('[Deploy] Deployment complete');
+    return c.json({
+      success: true,
+      filesDeployed: files.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[Deploy] Deployment failed:', error);
+    return c.json({
+      error: 'Deployment failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
 
 // Serve update manifest (JSON format for electron-updater)
 app.get('/updates/darwin-arm64/RELEASES.json', (c) => {

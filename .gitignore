@@ -13,3 +13,6 @@ devenv.local.yaml
 cloudflared/credentials.json
 cloudflared/config.yml
 cloudflared/*.pem
+
+# Builder keys (private key only - public key is in config.yml)
+.keys/

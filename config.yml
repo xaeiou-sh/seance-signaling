@@ -1,0 +1,10 @@
+# Seance Backend Configuration
+
+# Server port
+port: 3000
+
+# Builder authentication keys (public keys)
+# These keys are used to verify deployment signatures from CI/CD
+# Multiple keys allow for key rotation without downtime
+builder_keys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdN84cICyRszh9B5whtQmAHMpvM5/XBfd7bP/EfTwJz seance-builder

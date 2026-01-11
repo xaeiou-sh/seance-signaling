@@ -1,217 +1,147 @@
-# Seance Coordinator Setup
+# Quick Setup Guide
 
-This repository runs a y-webrtc signaling server exposed via Cloudflare Tunnel for secure, publicly accessible WebRTC signaling.
+Follow these steps to get the simplified CI/CD system running.
 
-## Prerequisites
+## Step 1: Verify Configuration
 
-1. **Docker and Docker Compose** installed on your system
-2. **Cloudflare account** (free tier works fine)
-3. A **domain managed by Cloudflare** (or use a free `.cfargotunnel.com` subdomain)
-
-## Quick Start
-
-### 1. Install Cloudflare Tunnel CLI (cloudflared)
-
-#### Linux/macOS:
-```bash
-# Download and install cloudflared
-curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-sudo dpkg -i cloudflared.deb
-```
-
-#### Or use your package manager:
-```bash
-# Arch Linux
-sudo pacman -S cloudflared
-
-# macOS
-brew install cloudflared
-```
-
-### 2. Authenticate with Cloudflare
+The repo already has `config.yml` with a builder public key committed:
 
 ```bash
-cloudflared tunnel login
+cd /Users/nicole/Documents/seance-signaling
+cat config.yml
 ```
 
-This opens a browser window. Select the domain you want to use.
-
-### 3. Create a Tunnel
-
-```bash
-# Create a new tunnel (choose a memorable name)
-cloudflared tunnel create seance-signaling
-
-# This creates a credentials file. Note the Tunnel ID shown in the output!
-```
-
-The credentials file will be saved to `~/.cloudflared/`. You'll need to copy it to this repo.
-
-### 4. Configure the Tunnel
-
-```bash
-# Copy the credentials file to this repo
-mkdir -p cloudflared
-cp ~/.cloudflared/YOUR_TUNNEL_ID.json cloudflared/credentials.json
-
-# Copy the template config and edit it
-cp cloudflared/config.yml.template cloudflared/config.yml
-```
-
-Now edit `cloudflared/config.yml`:
-
+You should see:
 ```yaml
-tunnel: YOUR_TUNNEL_ID  # Replace with your actual tunnel ID
-credentials-file: /etc/cloudflared/credentials.json
-
-ingress:
-  # Replace YOUR_TUNNEL_HOSTNAME with your desired hostname
-  - hostname: signaling.yourdomain.com
-    service: http://signaling:4444
-
-  - service: http_status:404
+builder_keys:
+  - ssh-ed25519 AAAAC3... seance-builder
 ```
 
-### 5. Create DNS Record
+This public key is **safe to commit** - it can't be used to impersonate the builder.
+
+## Step 2: Start Backend
+
+No configuration needed - the backend reads from `config.yml` automatically:
 
 ```bash
-# Route your hostname to the tunnel
-cloudflared tunnel route dns seance-signaling signaling.yourdomain.com
+cd /Users/nicole/Documents/seance-signaling
+devenv up
 ```
 
-Or use a free `.cfargotunnel.com` subdomain:
+Backend will log: `[Config] Loaded 1 builder key(s)`
+
+## Step 3: Configure GitHub Secret
+
+Only one secret needed - the private key:
+
+Go to: https://github.com/xaeiou-sh/seance/settings/secrets/actions
+
+Add `BUILDER_PRIVATE_KEY`:
+- Open `/Users/nicole/Documents/seance-signaling/.keys/builder_key`
+- Copy the ENTIRE contents (including `-----BEGIN OPENSSH PRIVATE KEY-----` headers)
+- Paste as the secret value
+
+Also add `DEPLOY_URL`:
+- Value: `https://backend.seance.dev/deploy`
+
+## Step 4: Verify Services
+
+Check that services are accessible:
+- Backend: https://backend.seance.dev
+- Deploy endpoint: https://backend.seance.dev/deploy
+- Web app: https://app.seance.dev
+
+## Step 5: Test Deployment
+
+### Option A: Manual Trigger
+
+1. Go to https://github.com/xaeiou-sh/seance/actions
+2. Click "Build and Deploy"
+3. Click "Run workflow" → Select branch → "Run workflow"
+4. Watch the build (takes ~10-15 minutes)
+
+### Option B: Push to Trigger
+
 ```bash
-cloudflared tunnel route dns seance-signaling seance-signaling.cfargotunnel.com
+cd /Users/nicole/Documents/seance
+git checkout main
+echo "# Test" >> README.md
+git commit -am "test: trigger deployment"
+git push
 ```
 
-### 6. Start the Services
+## Step 6: Verify Deployment
+
+After the build completes:
 
 ```bash
-# Start both the signaling server and cloudflare tunnel
-docker compose up -d
+# Check version API
+curl https://backend.seance.dev/updates/api/version.json | jq
 
-# View logs
-docker compose logs -f
-```
+# Check web app
+open https://app.seance.dev
 
-### 7. Test the Connection
-
-Your signaling server should now be accessible at:
-- `wss://signaling.yourdomain.com` (or your chosen hostname)
-
-Test it:
-```bash
-# Check if the WebSocket endpoint is reachable
-curl -I https://signaling.yourdomain.com
-```
-
-## Configuration
-
-### Signaling Server
-
-The y-webrtc signaling server runs on port 4444 by default. You can change this in `docker-compose.yml`:
-
-```yaml
-environment:
-  - PORT=4444  # Change to your preferred port
-```
-
-### Cloudflare Tunnel Settings
-
-Edit `cloudflared/config.yml` to customize:
-- Hostname routing
-- Protocol settings
-- Additional services
-
-See [Cloudflare Tunnel docs](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) for advanced configuration.
-
-## Usage in Your Application
-
-Update your y-webrtc configuration to use your tunnel:
-
-```javascript
-import * as Y from 'yjs'
-import { WebrtcProvider } from 'y-webrtc'
-
-const ydoc = new Y.Doc()
-
-const provider = new WebrtcProvider('your-room-name', ydoc, {
-  signaling: ['wss://signaling.yourdomain.com'],
-})
-```
-
-## Maintenance
-
-### View Logs
-```bash
-docker compose logs -f
-```
-
-### Restart Services
-```bash
-docker compose restart
-```
-
-### Stop Services
-```bash
-docker compose down
-```
-
-### Update Signaling Server
-```bash
-docker compose pull
-docker compose up -d
+# Check desktop update manifest
+curl https://backend.seance.dev/updates/darwin-arm64/latest-mac.yml
 ```
 
 ## Troubleshooting
 
-### Tunnel won't start
-- Check that `cloudflared/credentials.json` exists and is valid
-- Verify the tunnel ID in `cloudflared/config.yml` matches your credentials file
-- Check logs: `docker compose logs cloudflared`
+### "No builder_keys found in config.yml" on backend startup
+- Check that `config.yml` exists at repo root
+- Verify `builder_keys:` section has at least one key
+- Restart `devenv up`
 
-### Can't connect to signaling server
-- Ensure DNS record is created: `cloudflared tunnel route dns list`
-- Check if tunnel is running: `docker compose ps`
-- Verify hostname in `cloudflared/config.yml` matches your DNS record
-- Test direct connection to signaling server: `curl http://localhost:4444`
+### "Invalid signature" in GitHub Actions
+- Verify `BUILDER_PRIVATE_KEY` secret is set in GitHub
+- Check that you copied the entire private key (including header/footer)
+- Ensure the public key in `config.yml` matches the private key in GitHub
+- Test locally: Run `./scripts/generate-builder-keys.sh` and compare fingerprints
 
-### WebSocket connection fails
-- Cloudflare Tunnel automatically handles SSL/TLS
-- Make sure you're using `wss://` (not `ws://`) in your client
-- Check Cloudflare dashboard for any security rules blocking WebSocket connections
+### "Connection refused" in GitHub Actions
+- Check that `devenv up` is running
+- Test: `curl https://backend.seance.dev`
 
-## Security Notes
+### Build succeeds but files not deployed
+- Check backend logs in the terminal running `devenv up`
+- Look for `[Deploy]` messages
 
-- The `cloudflared/credentials.json` file contains secrets - it's git-ignored
-- The tunnel provides automatic HTTPS/WSS via Cloudflare's edge network
-- Consider enabling Cloudflare Access for additional authentication if needed
+## What Changed from Before
 
-## Architecture
+**Removed:**
+- ❌ Self-hosted GitHub Actions runner on spare Mac
+- ❌ Local file copying from runner to backend
+- ❌ Runner maintenance and setup
+- ❌ Bearer token authentication (less secure)
+- ❌ .env files and environment variable complexity
 
-```
-┌─────────────────┐
-│  Your Client    │
-│   (Browser)     │
-└────────┬────────┘
-         │ wss://
-         │
-         ▼
-┌─────────────────┐
-│   Cloudflare    │
-│   Edge Network  │
-└────────┬────────┘
-         │ Tunnel
-         │
-         ▼
-┌─────────────────┐       ┌──────────────────┐
-│  cloudflared    │◄──────┤ y-webrtc         │
-│  Container      │       │ signaling:4444   │
-└─────────────────┘       └──────────────────┘
-```
+**Added:**
+- ✅ GitHub-hosted runners (macos-14)
+- ✅ `/deploy` API endpoint on backend
+- ✅ HTTPS POST deployment from Actions to backend
+- ✅ Ed25519 signature authentication (cryptographically secure)
+- ✅ Single `config.yml` for all configuration (public keys committed!)
 
-## Additional Resources
+**Kept:**
+- ✅ Cloudflare Tunnel (still works great!)
+- ✅ Desktop auto-updates
+- ✅ Web app hosting
+- ✅ Local development workflow
 
-- [y-webrtc Documentation](https://github.com/yjs/y-webrtc)
-- [Cloudflare Tunnel Documentation](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-- [Docker Compose Documentation](https://docs.docker.com/compose/)
+**Security Improvements:**
+- Backend only stores public key in version control (safe to commit)
+- GitHub Actions signs each deployment with private key
+- Signatures can be verified later for audit trail
+- Multiple builder keys supported for key rotation without downtime
+- No secrets in .env files
+
+## Migration to Self-Hosting (Future)
+
+When ready to self-host:
+
+1. Set up your server (VPS, dedicated, etc.)
+2. Deploy `seance-backend-hono` to server
+3. Update `DEPLOY_URL` secret to point to server
+4. Done! (Optionally add self-hosted runner for faster builds)
+
+The API-based deployment makes migration easy.
