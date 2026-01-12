@@ -1,12 +1,12 @@
 # Deployment Guide
 
-Deploy Seance backend to DigitalOcean with NixOS using OpenTofu + nixos-anywhere.
+Deploy Seance backend to DigitalOcean using Fedora + OpenTofu + Ansible.
 
 ## Prerequisites
 
 **1. Tools:**
 
-Already included in devenv (opentofu). Just ensure you're in the devenv shell:
+OpenTofu and Ansible are included in devenv:
 ```bash
 devenv shell
 ```
@@ -46,8 +46,6 @@ cat ~/.ssh/id_ed25519.pub
 ### Step 2: Configure OpenTofu
 
 ```bash
-cd /Users/nicole/Documents/seance-signaling  # Or your repo path
-
 # Create config file
 cat > terraform.tfvars <<EOF
 ssh_public_key     = "ssh-ed25519 AAAAC3Nza... your-key-here"
@@ -58,36 +56,58 @@ region             = "sfo3"          # or nearest region
 EOF
 ```
 
-### Step 3: Deploy Everything
+### Step 3: Provision Infrastructure
 
 ```bash
 tofu init
 tofu apply
 ```
 
-This single command:
-1. Creates DigitalOcean droplet (Ubuntu)
-2. Configures firewall
-3. Installs NixOS over Ubuntu (via nixos-anywhere)
-4. Configures system (docker, devenv, etc)
-5. Clones repo and starts services
-6. Creates DNS records
+This creates:
+1. DigitalOcean Fedora 40 droplet
+2. Firewall (ports 22, 80, 443, 4444)
+3. Cloudflare DNS records (backend.seance.dev, app.seance.dev)
 
-Takes ~10 minutes. Watch the output for progress.
-
-Wait 2-3 minutes for DNS to propagate:
+Wait for DNS to propagate (2-3 minutes):
 ```bash
 dig backend.seance.dev +short  # Should return server IP
 ```
 
-### Step 4: Verify
+### Step 4: Create Ansible Inventory
 
 ```bash
-# Check service
+cat > ansible/inventory.yml <<EOF
+all:
+  hosts:
+    seance:
+      ansible_host: <SERVER_IP_FROM_TOFU_OUTPUT>
+      ansible_user: root
+      ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+EOF
+```
+
+### Step 5: Run Ansible Playbook
+
+```bash
+ansible-playbook -i ansible/inventory.yml ansible/playbook.yml
+```
+
+This configures:
+1. Installs system packages (git, curl, zellij)
+2. Installs Nix and devenv
+3. Installs Docker
+4. Clones repository to /opt/seance-signaling
+5. Creates systemd service that runs devenv in Zellij session
+
+### Step 6: Verify
+
+```bash
+# Check service status
 ssh root@<SERVER_IP> systemctl status seance-backend
 
-# View logs
-ssh root@<SERVER_IP> journalctl -u seance-backend -f
+# Attach to Zellij session to see live output
+ssh root@<SERVER_IP>
+zellij attach seance-production
 
 # Test endpoints
 curl https://backend.seance.dev/
@@ -102,23 +122,32 @@ devenv up
 # Default profile: CADDY_DOMAIN=localhost:8080
 ```
 
-**Production (NixOS):**
-```bash
-devenv --profile prod up
-# Prod profile: CADDY_DOMAIN=backend.seance.dev
-```
+**Production (Fedora + Zellij):**
+- systemd service runs: `zellij --session seance-production --daemon -- devenv --profile prod up`
+- You can attach anytime: `ssh root@server`, then `zellij attach seance-production`
+- See real-time logs and debug interactively
+- Press Ctrl+C to restart, or just detach (Ctrl+O, d) to leave running
 
 **Configuration:**
-- `nix/nixos-configuration.nix` - NixOS system config (packages, services, firewall)
-- `nix/disko-config.nix` - Disk partitioning
+- `main.tf` - OpenTofu infrastructure (droplet, firewall, DNS)
+- `ansible/playbook.yml` - Server configuration (Nix, devenv, Docker, Zellij)
 - `devenv.nix` - App environment (same locally and prod)
-- `flake.nix` - Nix flake tying it together
-- `main.tf` - OpenTofu/Terraform infrastructure config
 - `terraform.tfvars` - Your deployment variables (gitignored)
 
-**Zero drift** - NixOS ensures system is identical to config. devenv ensures app runs the same.
+**Zero drift** - Same devenv.nix everywhere. Zellij gives you visibility.
 
 ## Maintenance
+
+### Debug Issues
+
+```bash
+# SSH in and attach to Zellij session
+ssh root@<SERVER_IP>
+zellij attach seance-production
+
+# See everything in real-time
+# Press Ctrl+O, d to detach without stopping
+```
 
 ### Update Code
 
@@ -129,18 +158,28 @@ git pull
 systemctl restart seance-backend
 ```
 
-### Update System Config
-
-Edit `nix/nixos-configuration.nix`, then:
-```bash
-tofu apply  # Rebuilds and deploys NixOS
-```
-
-### View Logs
+### View Logs (systemd)
 
 ```bash
 ssh root@<SERVER_IP>
 journalctl -u seance-backend -f
+```
+
+### Manual Restart
+
+```bash
+# Attach to session, Ctrl+C to stop, then restart
+ssh root@<SERVER_IP>
+zellij attach seance-production
+# Ctrl+C
+# Up arrow, Enter to restart devenv
+```
+
+### Update Server Config
+
+Edit `ansible/playbook.yml`, then:
+```bash
+ansible-playbook -i ansible/inventory.yml ansible/playbook.yml
 ```
 
 ### Scale Server
@@ -165,9 +204,9 @@ tofu destroy
 
 **"Connection refused" from GitHub Actions:**
 ```bash
+# Attach to Zellij and see what's happening
 ssh root@<SERVER_IP>
-journalctl -u seance-backend -xe
-curl localhost:3000  # Test backend directly
+zellij attach seance-production
 ```
 
 **"Invalid builder key":**
@@ -178,56 +217,55 @@ curl localhost:3000  # Test backend directly
 **DNS not resolving:**
 ```bash
 dig backend.seance.dev +short
-# If empty, check DNS provider or wait longer
+# If empty, check Cloudflare or wait longer
 ```
 
-**NixOS installation fails:**
+**Service won't start:**
 ```bash
-# Check tofu output for errors
-# SSH may take a minute after reboot
-# Try again: tofu apply
+ssh root@<SERVER_IP>
+journalctl -u seance-backend -xe
 ```
 
 ## Architecture
 
 ```
-NixOS (declarative OS)
-  └── configuration.nix declares:
-      ├── Packages: git, docker, devenv
-      ├── Services: docker, sshd
-      ├── Firewall: 22, 80, 443, 4444
-      └── systemd service: seance-backend
-          └── Runs: devenv --profile prod up
+Fedora 40 (DigitalOcean)
+  ├── System packages (git, docker, zellij)
+  ├── Nix (multi-user install)
+  ├── devenv (via Nix)
+  └── systemd service: seance-backend
+      └── Zellij session: seance-production
+          └── bash: devenv --profile prod up
+              ├── Backend (Hono, port 3000)
+              ├── Signaling (Docker, port 4444)
+              └── Caddy (HTTPS :443 → 3000)
 
-devenv.nix (same everywhere)
-  ├── Default profile (dev)
-  │   └── CADDY_DOMAIN=localhost:8080
-  └── Prod profile
-      ├── CADDY_DOMAIN=backend.seance.dev
-      └── APP_DOMAIN=app.seance.dev
+devenv.nix profiles:
+  ├── Default (dev): CADDY_DOMAIN=localhost:8080
+  └── Prod: CADDY_DOMAIN=backend.seance.dev
 
-Services:
-  ├── Backend (Hono, port 3000)
-  ├── Signaling (Docker, port 4444)
-  └── Caddy (HTTPS :443 → 3000)
+Cloudflare DNS:
+  ├── backend.seance.dev → Server IP
+  └── app.seance.dev → Server IP
 ```
 
-## Advantages Over Ubuntu + Ansible
+## Why This Setup?
 
-**Before (Ubuntu + Ansible):**
-- Ubuntu base image (~100 packages you don't control)
-- Ansible installs Nix (complex, error-prone)
-- Ansible installs Docker, devenv
-- ~100 lines of YAML
-- State can drift over time
+**Debuggability:**
+- Attach to Zellij session anytime to see what's happening
+- No digging through journalctl logs
+- Interactive debugging when things go wrong
 
-**Now (NixOS):**
-- NixOS base (minimal, declarative)
-- Nix built-in (it's the OS)
-- Declare packages in configuration.nix
-- ~60 lines of Nix
-- Cannot drift (system matches config)
-- Atomic rollbacks if something breaks
+**Simplicity:**
+- Fedora is mainstream and well-documented
+- Up-to-date packages (newer than Ubuntu LTS)
+- Ansible is straightforward and battle-tested
+- No complex NixOS cross-compilation issues
+
+**Same Environment:**
+- devenv.nix ensures local and prod are identical
+- Profiles handle the few differences (domains)
+- No drift between environments
 
 ## Cost
 

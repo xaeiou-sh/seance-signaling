@@ -22,10 +22,10 @@ resource "digitalocean_ssh_key" "default" {
   public_key = var.ssh_public_key
 }
 
-# Create Ubuntu droplet (nixos-anywhere will install NixOS over it)
+# Create Fedora droplet
 resource "digitalocean_droplet" "seance_backend" {
   name        = var.server_name
-  image       = "ubuntu-24-04-x64"
+  image       = "fedora-40-x64"
   size        = var.droplet_size
   region      = var.region
   ssh_keys    = [digitalocean_ssh_key.default.fingerprint]
@@ -74,19 +74,6 @@ resource "digitalocean_firewall" "seance" {
     port_range            = "1-65535"
     destination_addresses = ["0.0.0.0/0", "::/0"]
   }
-}
-
-# Install NixOS using nixos-anywhere
-module "nixos_install" {
-  source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one"
-
-  nixos_system_attr      = ".#nixosConfigurations.seance-backend.config.system.build.toplevel"
-  nixos_partitioner_attr = ".#nixosConfigurations.seance-backend.config.system.build.diskoScript"
-
-  target_host      = digitalocean_droplet.seance_backend.ipv4_address
-  target_user      = "root"
-  instance_id      = digitalocean_droplet.seance_backend.id
-  build_on_remote  = true  # Build on the target server (x86_64-linux) instead of locally (aarch64-darwin)
 }
 
 # Cloudflare DNS records
