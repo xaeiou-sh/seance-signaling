@@ -9,7 +9,7 @@ variable "server_name" {
 variable "droplet_size" {
   description = "Droplet size"
   type        = string
-  default     = "s-1vcpu-2gb"  # $18/month
+  default     = "s-1vcpu-1gb"  # $6/month
 }
 
 variable "region" {
@@ -20,5 +20,10 @@ variable "region" {
 
 variable "ssh_public_key" {
   description = "SSH public key for server access"
+  type        = string
+}
+
+variable "cloudflare_zone_id" {
+  description = "Cloudflare Zone ID for seance.dev"
   type        = string
 }

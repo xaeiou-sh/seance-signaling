@@ -6,12 +6,20 @@ terraform {
       source  = "digitalocean/digitalocean"
       version = "~> 2.0"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.0"
+    }
   }
 }
 
 # Configure DigitalOcean provider
 # Set DIGITALOCEAN_TOKEN environment variable
 provider "digitalocean" {}
+
+# Configure Cloudflare provider
+# Set CLOUDFLARE_API_TOKEN environment variable
+provider "cloudflare" {}
 
 # SSH key for server access
 resource "digitalocean_ssh_key" "default" {
@@ -85,4 +93,23 @@ resource "local_file" "ansible_inventory" {
     server_name = digitalocean_droplet.seance_backend.name
   })
   filename = "${path.module}/../ansible/inventory.yml"
+}
+
+# Cloudflare DNS records
+resource "cloudflare_record" "backend" {
+  zone_id = var.cloudflare_zone_id
+  name    = "backend"
+  content = digitalocean_droplet.seance_backend.ipv4_address
+  type    = "A"
+  ttl     = 1  # Auto TTL
+  proxied = false
+}
+
+resource "cloudflare_record" "app" {
+  zone_id = var.cloudflare_zone_id
+  name    = "app"
+  content = digitalocean_droplet.seance_backend.ipv4_address
+  type    = "A"
+  ttl     = 1  # Auto TTL
+  proxied = false
 }

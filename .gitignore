@@ -14,6 +14,7 @@ cloudflared/credentials.json
 cloudflared/config.yml
 cloudflared/*.pem
 
+ansible/inventory.yml
 # Builder keys (private key only - public key is in config.yml)
 .keys/
 .env

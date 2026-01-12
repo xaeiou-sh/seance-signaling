@@ -1,12 +1,14 @@
 # Deployment Guide
 
-Deploy Seance backend to a DigitalOcean droplet using Terraform + Ansible.
+Deploy Seance backend to a DigitalOcean droplet using OpenTofu + Ansible.
 
 ## Prerequisites
 
 **1. Tools:**
+
+Already included in devenv (opentofu, ansible). Just ensure you're in the devenv shell:
 ```bash
-brew install terraform ansible
+devenv shell
 ```
 
 **2. DigitalOcean API Token:**
@@ -15,7 +17,15 @@ brew install terraform ansible
 export DIGITALOCEAN_TOKEN=your_token_here
 ```
 
-**3. SSH Key:**
+**3. Cloudflare API Token:**
+```bash
+# Get token from: https://dash.cloudflare.com/profile/api-tokens
+# Click "Create Token" → "Edit zone DNS" template
+# Select your seance.dev zone
+export CLOUDFLARE_API_TOKEN=your_token_here
+```
+
+**4. SSH Key:**
 ```bash
 # Generate if needed
 ssh-keygen -t ed25519 -C "seance-deploy"
@@ -26,45 +36,49 @@ cat ~/.ssh/id_ed25519.pub
 
 ## Deploy
 
-### Step 1: Configure Terraform
+### Step 1: Get Cloudflare Zone ID
+
+```bash
+# Find your zone ID at: https://dash.cloudflare.com/
+# Click on seance.dev domain → Overview → Copy Zone ID from right sidebar
+```
+
+### Step 2: Configure OpenTofu
 
 ```bash
 cd terraform
 
 # Create config file
 cat > terraform.tfvars <<EOF
-ssh_public_key = "ssh-ed25519 AAAAC3Nza... your-key-here"
-server_name    = "seance-backend"
-droplet_size   = "s-1vcpu-2gb"  # $18/month
-region         = "sfo3"          # or nearest region
+ssh_public_key     = "ssh-ed25519 AAAAC3Nza... your-key-here"
+cloudflare_zone_id = "your_zone_id_here"
+server_name        = "seance-backend"
+droplet_size       = "s-1vcpu-1gb"  # $6/month
+region             = "sfo3"          # or nearest region
 EOF
 ```
 
-### Step 2: Create Server
+### Step 3: Provision Infrastructure
 
 ```bash
-terraform init
-terraform apply
+tofu init
+tofu apply
 ```
 
-Copy the server IP from output.
+This creates:
+- DigitalOcean droplet
+- Firewall rules
+- DNS records (backend.seance.dev, app.seance.dev)
+- Ansible inventory
 
-### Step 3: Update DNS
-
-Add A records to your DNS provider:
-```
-backend.seance.dev  A  <SERVER_IP>
-app.seance.dev      A  <SERVER_IP>
-```
-
-Wait 5 minutes for DNS propagation:
+Wait 2-3 minutes for DNS to propagate:
 ```bash
-dig backend.seance.dev +short  # Should return SERVER_IP
+dig backend.seance.dev +short  # Should return server IP
 ```
 
 ### Step 4: Configure Server
 
-Terraform auto-generated `../ansible/inventory.yml`.
+OpenTofu auto-generated `../ansible/inventory.yml`.
 
 ```bash
 cd ../ansible
@@ -139,14 +153,14 @@ droplet_size = "s-2vcpu-4gb"  # $36/month
 Apply:
 ```bash
 cd terraform
-terraform apply
+tofu apply
 ```
 
 ### Destroy
 
 ```bash
 cd terraform
-terraform destroy
+tofu destroy
 ```
 
 ## Troubleshooting

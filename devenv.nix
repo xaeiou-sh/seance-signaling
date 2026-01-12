@@ -6,6 +6,7 @@
   ...
 }: {
   # https://devenv.sh/basics/
+  dotenv.enable = true;
   env.GREET = "devenv";
 
   # Default environment (local development)
@@ -24,6 +25,9 @@
     git
     nodejs_22
     caddy
+    # For cloud deploys
+    opentofu
+    ansible
   ];
 
   # https://devenv.sh/languages/
