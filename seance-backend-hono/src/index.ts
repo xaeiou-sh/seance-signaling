@@ -3,6 +3,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { swaggerUI } from '@hono/swagger-ui';
 import { serveStatic } from '@hono/node-server/serve-static';
+import { bodyLimit } from 'hono/body-limit';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, cpSync } from 'fs';
 import { join, extname } from 'path';
 import { createWriteStream } from 'fs';
@@ -207,6 +208,15 @@ const versionRoute = createRoute({
 });
 
 // Register OpenAPI routes
+// Apply body limit middleware to deploy endpoint (500 MB for large payloads)
+app.use('/deploy', bodyLimit({
+  maxSize: 500 * 1024 * 1024, // 500 MB
+  onError: (c) => {
+    console.error('[Deploy] Payload too large');
+    return c.json({ error: 'Payload too large' }, 413);
+  },
+}));
+
 app.openapi(deployRoute, async (c) => {
   const builderKey = c.req.header('X-Builder-Key');
 
@@ -415,6 +425,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   serve({
     fetch: app.fetch,
     port: Number(port),
-    maxRequestBodySize: 500 * 1024 * 1024, // 500 MB limit for deployment payloads
   });
 }
