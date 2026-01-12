@@ -415,5 +415,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   serve({
     fetch: app.fetch,
     port: Number(port),
+    maxRequestBodySize: 500 * 1024 * 1024, // 500 MB limit for deployment payloads
   });
 }
