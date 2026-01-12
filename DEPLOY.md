@@ -1,12 +1,12 @@
 # Deployment Guide
 
-Deploy Seance backend to a DigitalOcean droplet using OpenTofu + Ansible.
+Deploy Seance backend to DigitalOcean with NixOS using OpenTofu + nixos-anywhere.
 
 ## Prerequisites
 
 **1. Tools:**
 
-Already included in devenv (opentofu, ansible). Just ensure you're in the devenv shell:
+Already included in devenv (opentofu). Just ensure you're in the devenv shell:
 ```bash
 devenv shell
 ```
@@ -58,41 +58,29 @@ region             = "sfo3"          # or nearest region
 EOF
 ```
 
-### Step 3: Provision Infrastructure
+### Step 3: Deploy Everything
 
 ```bash
 tofu init
 tofu apply
 ```
 
-This creates:
-- DigitalOcean droplet
-- Firewall rules
-- DNS records (backend.seance.dev, app.seance.dev)
-- Ansible inventory
+This single command:
+1. Creates DigitalOcean droplet (Ubuntu)
+2. Configures firewall
+3. Installs NixOS over Ubuntu (via nixos-anywhere)
+4. Configures system (docker, devenv, etc)
+5. Clones repo and starts services
+6. Creates DNS records
+
+Takes ~10 minutes. Watch the output for progress.
 
 Wait 2-3 minutes for DNS to propagate:
 ```bash
 dig backend.seance.dev +short  # Should return server IP
 ```
 
-### Step 4: Configure Server
-
-OpenTofu auto-generated `../ansible/inventory.yml`.
-
-```bash
-cd ../ansible
-
-# Test connection
-ansible all -i inventory.yml -m ping
-
-# Deploy (takes ~5 minutes)
-ansible-playbook -i inventory.yml playbook.yml
-```
-
-This installs: Nix, devenv, Docker, clones repo, starts services.
-
-### Step 5: Verify
+### Step 4: Verify
 
 ```bash
 # Check service
@@ -111,19 +99,22 @@ curl https://backend.seance.dev/ui  # Swagger
 **Local (dev):**
 ```bash
 devenv up
-# Runs with default profile
-# CADDY_DOMAIN=localhost:8080
+# Default profile: CADDY_DOMAIN=localhost:8080
 ```
 
-**Production:**
+**Production (NixOS):**
 ```bash
 devenv --profile prod up
-# Uses prod profile from devenv.nix
-# CADDY_DOMAIN=backend.seance.dev
-# APP_DOMAIN=app.seance.dev
+# Prod profile: CADDY_DOMAIN=backend.seance.dev
 ```
 
-**Zero drift** - same devenv.nix, different profile.
+**Configuration:**
+- `nix/nixos-configuration.nix` - NixOS system config (packages, services, firewall)
+- `nix/disko-config.nix` - Disk partitioning
+- `devenv.nix` - App environment (same locally and prod)
+- `flake.nix` - Nix flake tying it together
+
+**Zero drift** - NixOS ensures system is identical to config. devenv ensures app runs the same.
 
 ## Maintenance
 
@@ -134,6 +125,14 @@ ssh root@<SERVER_IP>
 cd /opt/seance-signaling
 git pull
 systemctl restart seance-backend
+```
+
+### Update System Config
+
+Edit `nix/nixos-configuration.nix`, then:
+```bash
+cd terraform
+tofu apply  # Rebuilds and deploys NixOS
 ```
 
 ### View Logs
@@ -147,7 +146,7 @@ journalctl -u seance-backend -f
 
 Edit `terraform/terraform.tfvars`:
 ```hcl
-droplet_size = "s-2vcpu-4gb"  # $36/month
+droplet_size = "s-2vcpu-2gb"  # $18/month
 ```
 
 Apply:
@@ -183,9 +182,24 @@ dig backend.seance.dev +short
 # If empty, check DNS provider or wait longer
 ```
 
+**NixOS installation fails:**
+```bash
+# Check tofu output for errors
+# SSH may take a minute after reboot
+# Try again: tofu apply
+```
+
 ## Architecture
 
 ```
+NixOS (declarative OS)
+  └── configuration.nix declares:
+      ├── Packages: git, docker, devenv
+      ├── Services: docker, sshd
+      ├── Firewall: 22, 80, 443, 4444
+      └── systemd service: seance-backend
+          └── Runs: devenv --profile prod up
+
 devenv.nix (same everywhere)
   ├── Default profile (dev)
   │   └── CADDY_DOMAIN=localhost:8080
@@ -199,9 +213,26 @@ Services:
   └── Caddy (HTTPS :443 → 3000)
 ```
 
+## Advantages Over Ubuntu + Ansible
+
+**Before (Ubuntu + Ansible):**
+- Ubuntu base image (~100 packages you don't control)
+- Ansible installs Nix (complex, error-prone)
+- Ansible installs Docker, devenv
+- ~100 lines of YAML
+- State can drift over time
+
+**Now (NixOS):**
+- NixOS base (minimal, declarative)
+- Nix built-in (it's the OS)
+- Declare packages in configuration.nix
+- ~60 lines of Nix
+- Cannot drift (system matches config)
+- Atomic rollbacks if something breaks
+
 ## Cost
 
-- Droplet: $18/month
+- Droplet: $6/month (1GB) or $18/month (2GB)
 - Bandwidth: 1TB included
 
-**Total: $18/month**
+**Total: $6-18/month**

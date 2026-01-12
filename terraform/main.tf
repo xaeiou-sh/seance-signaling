@@ -13,12 +13,7 @@ terraform {
   }
 }
 
-# Configure DigitalOcean provider
-# Set DIGITALOCEAN_TOKEN environment variable
 provider "digitalocean" {}
-
-# Configure Cloudflare provider
-# Set CLOUDFLARE_API_TOKEN environment variable
 provider "cloudflare" {}
 
 # SSH key for server access
@@ -27,7 +22,7 @@ resource "digitalocean_ssh_key" "default" {
   public_key = var.ssh_public_key
 }
 
-# Create the droplet
+# Create Ubuntu droplet (nixos-anywhere will install NixOS over it)
 resource "digitalocean_droplet" "seance_backend" {
   name        = var.server_name
   image       = "ubuntu-24-04-x64"
@@ -44,35 +39,30 @@ resource "digitalocean_firewall" "seance" {
   name        = "seance-firewall"
   droplet_ids = [digitalocean_droplet.seance_backend.id]
 
-  # SSH
   inbound_rule {
     protocol         = "tcp"
     port_range       = "22"
     source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  # HTTP
   inbound_rule {
     protocol         = "tcp"
     port_range       = "80"
     source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  # HTTPS
   inbound_rule {
     protocol         = "tcp"
     port_range       = "443"
     source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  # WebRTC Signaling
   inbound_rule {
     protocol         = "tcp"
     port_range       = "4444"
     source_addresses = ["0.0.0.0/0", "::/0"]
   }
 
-  # Allow all outbound
   outbound_rule {
     protocol              = "tcp"
     port_range            = "1-65535"
@@ -86,13 +76,17 @@ resource "digitalocean_firewall" "seance" {
   }
 }
 
-# Auto-generate Ansible inventory
-resource "local_file" "ansible_inventory" {
-  content = templatefile("${path.module}/templates/inventory.yml.tpl", {
-    server_ip   = digitalocean_droplet.seance_backend.ipv4_address
-    server_name = digitalocean_droplet.seance_backend.name
-  })
-  filename = "${path.module}/../ansible/inventory.yml"
+# Install NixOS using nixos-anywhere
+module "nixos_install" {
+  source = "github.com/nix-community/nixos-anywhere//terraform/all-in-one"
+
+  nixos_system_attr      = ".#nixosConfigurations.seance-backend.config.system.build.toplevel"
+  nixos_partitioner_attr = ".#nixosConfigurations.seance-backend.config.system.build.diskoScript"
+
+  target_host = digitalocean_droplet.seance_backend.ipv4_address
+  target_user = "root"
+
+  instance_id = digitalocean_droplet.seance_backend.id
 }
 
 # Cloudflare DNS records
@@ -101,7 +95,7 @@ resource "cloudflare_record" "backend" {
   name    = "backend"
   content = digitalocean_droplet.seance_backend.ipv4_address
   type    = "A"
-  ttl     = 1  # Auto TTL
+  ttl     = 1
   proxied = false
 }
 
@@ -110,6 +104,6 @@ resource "cloudflare_record" "app" {
   name    = "app"
   content = digitalocean_droplet.seance_backend.ipv4_address
   type    = "A"
-  ttl     = 1  # Auto TTL
+  ttl     = 1
   proxied = false
 }
