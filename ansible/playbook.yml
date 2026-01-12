@@ -1,5 +1,5 @@
 ---
-# Ansible playbook to provision Seance backend server on Fedora
+# Ansible playbook to provision Seance backend server on Rocky Linux 9
 # Uses Zellij for easy debugging - ssh in and `zellij attach seance-production`
 
 - name: Provision Seance Backend Server
@@ -8,8 +8,8 @@
   vars:
     repo_url: "https://github.com/xaeiou-sh/seance-signaling.git"
     repo_branch: "main"
-    install_dir: "/opt/seance-signaling"
-    data_dir: "/opt/seance-data"
+    install_dir: "/mycorrhiza/seance-signaling"
+    data_dir: "/mycorrhiza/seance-data"
     nix_installer_url: "https://nixos.org/nix/install"
     zellij_session_name: "seance-production"
 

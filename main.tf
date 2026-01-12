@@ -22,10 +22,10 @@ resource "digitalocean_ssh_key" "default" {
   public_key = var.ssh_public_key
 }
 
-# Create Fedora droplet
+# Create Rocky Linux 9 droplet
 resource "digitalocean_droplet" "seance_backend" {
   name        = var.server_name
-  image       = "fedora-40-x64"
+  image       = "rockylinux-9-x64"
   size        = var.droplet_size
   region      = var.region
   ssh_keys    = [digitalocean_ssh_key.default.fingerprint]
@@ -93,6 +93,14 @@ resource "cloudflare_record" "app" {
   type    = "A"
   ttl     = 1
   proxied = false
+}
+
+# Generate Ansible inventory automatically
+resource "local_file" "ansible_inventory" {
+  content = templatefile("${path.module}/ansible/inventory.yml.tpl", {
+    server_ip = digitalocean_droplet.seance_backend.ipv4_address
+  })
+  filename = "${path.module}/ansible/inventory.yml"
 }
 
 # Variables

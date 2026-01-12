@@ -1,6 +1,6 @@
 # Deployment Guide
 
-Deploy Seance backend to DigitalOcean using Fedora + OpenTofu + Ansible.
+Deploy Seance backend to DigitalOcean using Rocky Linux 9 + OpenTofu + Ansible.
 
 ## Prerequisites
 
@@ -64,29 +64,17 @@ tofu apply
 ```
 
 This creates:
-1. DigitalOcean Fedora 40 droplet
+1. DigitalOcean Rocky Linux 9 droplet
 2. Firewall (ports 22, 80, 443, 4444)
 3. Cloudflare DNS records (backend.seance.dev, app.seance.dev)
+4. Ansible inventory file (ansible/inventory.yml) with server IP
 
 Wait for DNS to propagate (2-3 minutes):
 ```bash
 dig backend.seance.dev +short  # Should return server IP
 ```
 
-### Step 4: Create Ansible Inventory
-
-```bash
-cat > ansible/inventory.yml <<EOF
-all:
-  hosts:
-    seance:
-      ansible_host: <SERVER_IP_FROM_TOFU_OUTPUT>
-      ansible_user: root
-      ansible_ssh_private_key_file: ~/.ssh/id_ed25519
-EOF
-```
-
-### Step 5: Run Ansible Playbook
+### Step 4: Run Ansible Playbook
 
 ```bash
 ansible-playbook -i ansible/inventory.yml ansible/playbook.yml
@@ -99,7 +87,7 @@ This configures:
 4. Clones repository to /opt/seance-signaling
 5. Creates systemd service that runs devenv in Zellij session
 
-### Step 6: Verify
+### Step 5: Verify
 
 ```bash
 # Check service status
@@ -122,7 +110,7 @@ devenv up
 # Default profile: CADDY_DOMAIN=localhost:8080
 ```
 
-**Production (Fedora + Zellij):**
+**Production (Rocky Linux + Zellij):**
 - systemd service runs: `zellij --session seance-production --daemon -- devenv --profile prod up`
 - You can attach anytime: `ssh root@server`, then `zellij attach seance-production`
 - See real-time logs and debug interactively
@@ -229,7 +217,7 @@ journalctl -u seance-backend -xe
 ## Architecture
 
 ```
-Fedora 40 (DigitalOcean)
+Rocky Linux 9 (DigitalOcean)
   ├── System packages (git, docker, zellij)
   ├── Nix (multi-user install)
   ├── devenv (via Nix)
@@ -257,7 +245,7 @@ Cloudflare DNS:
 - Interactive debugging when things go wrong
 
 **Simplicity:**
-- Fedora is mainstream and well-documented
+- Rocky Linux 9 is stable, enterprise-grade RHEL clone
 - Up-to-date packages (newer than Ubuntu LTS)
 - Ansible is straightforward and battle-tested
 - No complex NixOS cross-compilation issues
