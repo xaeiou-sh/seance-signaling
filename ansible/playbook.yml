@@ -1,0 +1,119 @@
+---
+# Ansible playbook to provision Seance backend server
+# This playbook installs Nix, devenv, Docker, and sets up the backend service
+
+- name: Provision Seance Backend Server
+  hosts: seance
+  become: yes
+  vars:
+    repo_url: "https://github.com/xaeiou-sh/seance-signaling.git"
+    repo_branch: "main"
+    install_dir: "/opt/seance-signaling"
+    data_dir: "/opt/seance-data"
+    nix_installer_url: "https://nixos.org/nix/install"
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required system packages
+      apt:
+        name:
+          - curl
+          - git
+          - ca-certificates
+          - gnupg
+          - xz-utils
+        state: present
+
+    - name: Check if Nix is already installed
+      stat:
+        path: /nix/var/nix/profiles/default/bin/nix
+      register: nix_installed
+
+    - name: Install Nix (multi-user)
+      shell: |
+        curl -L {{ nix_installer_url }} | sh -s -- --daemon --yes
+      when: not nix_installed.stat.exists
+      register: nix_install
+
+    - name: Source Nix environment
+      shell: . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+      when: nix_install.changed
+
+    - name: Add Nix to PATH for all users
+      lineinfile:
+        path: /etc/profile.d/nix.sh
+        line: '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
+        create: yes
+        mode: '0755'
+
+    - name: Install devenv via Nix
+      shell: |
+        . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+        nix profile install --accept-flake-config nixpkgs#devenv
+      args:
+        creates: /root/.nix-profile/bin/devenv
+      environment:
+        NIX_CONFIG: "experimental-features = nix-command flakes"
+
+    - name: Install Docker
+      block:
+        - name: Add Docker GPG key
+          apt_key:
+            url: https://download.docker.com/linux/ubuntu/gpg
+            state: present
+
+        - name: Add Docker repository
+          apt_repository:
+            repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+            state: present
+
+        - name: Install Docker
+          apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+            state: present
+            update_cache: yes
+
+        - name: Start and enable Docker
+          systemd:
+            name: docker
+            state: started
+            enabled: yes
+
+    - name: Create data directory
+      file:
+        path: "{{ data_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Clone repository
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ install_dir }}"
+        version: "{{ repo_branch }}"
+        force: yes
+
+    - name: Create systemd service file
+      template:
+        src: templates/seance-backend.service.j2
+        dest: /etc/systemd/system/seance-backend.service
+        mode: '0644'
+      notify: Reload systemd
+
+    - name: Enable and start seance-backend service
+      systemd:
+        name: seance-backend
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
