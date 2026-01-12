@@ -30,19 +30,22 @@ devenv up
 
 Backend will log: `[Config] Loaded 1 builder key(s)`
 
-## Step 3: Configure GitHub Secret
-
-Only one secret needed - the private key:
+## Step 3: Configure GitHub Secrets
 
 Go to: https://github.com/xaeiou-sh/seance/settings/secrets/actions
 
 Add `BUILDER_PRIVATE_KEY`:
-- Open `/Users/nicole/Documents/seance-signaling/.keys/builder_key`
-- Copy the ENTIRE contents (including `-----BEGIN OPENSSH PRIVATE KEY-----` headers)
-- Paste as the secret value
+```bash
+# Base64 encode the private key (preserves newlines)
+cat /Users/nicole/Documents/seance-signaling/.keys/builder_key | base64
+```
+- Copy the entire base64 output
+- Paste as the secret value in GitHub
 
-Also add `DEPLOY_URL`:
+Add `DEPLOY_URL`:
 - Value: `https://backend.seance.dev/deploy`
+
+**Note:** We base64 encode the private key because multi-line secrets can lose newlines when passed through environment variables. The deploy script automatically decodes it.
 
 ## Step 4: Verify Services
 
@@ -94,7 +97,8 @@ curl https://backend.seance.dev/updates/darwin-arm64/latest-mac.yml
 
 ### "Invalid signature" in GitHub Actions
 - Verify `BUILDER_PRIVATE_KEY` secret is set in GitHub
-- Check that you copied the entire private key (including header/footer)
+- Ensure you base64 encoded the key: `cat .keys/builder_key | base64`
+- Check that you copied the entire base64 output (no line breaks in the secret)
 - Ensure the public key in `config.yml` matches the private key in GitHub
 - Test locally: Run `./scripts/generate-builder-keys.sh` and compare fingerprints
 
