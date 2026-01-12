@@ -1,0 +1,24 @@
+# Caddy reverse proxy for Seance backend
+# Configured via environment variables set in devenv.nix
+
+{
+	admin off
+}
+
+# Backend domain (set by CADDY_DOMAIN env var)
+{$CADDY_DOMAIN} {
+	reverse_proxy localhost:3000
+	log {
+		output stderr
+		format console
+	}
+}
+
+# App domain (set by APP_DOMAIN env var, empty for local dev)
+{$APP_DOMAIN:} {
+	reverse_proxy localhost:3000
+	log {
+		output stderr
+		format console
+	}
+}

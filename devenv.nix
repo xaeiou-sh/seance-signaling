@@ -7,14 +7,23 @@
 }: {
   # https://devenv.sh/basics/
   env.GREET = "devenv";
-  dotenv.enable = true;
+
+  # Default environment (local development)
+  env.PORT = "3000";
+  env.CADDY_DOMAIN = "localhost:8080";
+  env.APP_DOMAIN = "";
+
+  # Production profile
+  profiles.prod.module = {
+    env.CADDY_DOMAIN = "backend.seance.dev";
+    env.APP_DOMAIN = "app.seance.dev";
+  };
 
   # https://devenv.sh/packages/
   packages = with pkgs; [
     git
-    cloudflared
     nodejs_22
-    # coturn
+    caddy
   ];
 
   # https://devenv.sh/languages/
@@ -29,13 +38,14 @@
       funnyzak/y-webrtc-signaling:latest
   '';
 
-  processes.cloudflare-tunnel.exec = ''
+  processes.caddy.exec = ''
     cd ${config.env.DEVENV_ROOT}
-    ${lib.getExe pkgs.cloudflared} tunnel --config ./cloudflared/config.yml run
+    ${lib.getExe pkgs.caddy} run --config ./Caddyfile --adapter caddyfile
   '';
 
   processes.update-server.exec = ''
     cd ${config.env.DEVENV_ROOT}/seance-backend-hono
+    export PORT=3000
     npm run start
   '';
 
@@ -63,10 +73,13 @@
     echo "🔮 Seance Coordinator Development Environment"
     echo ""
     echo "Available commands:"
-    echo "  devenv up           - Start all services (signaling + tunnel)"
+    echo "  devenv up           - Start all services (backend + signaling + caddy)"
     echo "  cleanup-docker      - Remove leftover Docker containers"
     echo ""
-    echo "📖 See SETUP.md for Cloudflare Tunnel configuration"
+    echo "🌐 Local URLs:"
+    echo "  Backend: http://localhost:8080"
+    echo "  Swagger UI: http://localhost:8080/ui"
+    echo "  Signaling: ws://localhost:4444"
   '';
 
   # https://devenv.sh/tasks/
