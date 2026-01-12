@@ -83,10 +83,10 @@ module "nixos_install" {
   nixos_system_attr      = ".#nixosConfigurations.seance-backend.config.system.build.toplevel"
   nixos_partitioner_attr = ".#nixosConfigurations.seance-backend.config.system.build.diskoScript"
 
-  target_host = digitalocean_droplet.seance_backend.ipv4_address
-  target_user = "root"
-
-  instance_id = digitalocean_droplet.seance_backend.id
+  target_host      = digitalocean_droplet.seance_backend.ipv4_address
+  target_user      = "root"
+  instance_id      = digitalocean_droplet.seance_backend.id
+  build_on_remote  = true  # Build on the target server (x86_64-linux) instead of locally (aarch64-darwin)
 }
 
 # Cloudflare DNS records
@@ -106,4 +106,49 @@ resource "cloudflare_record" "app" {
   type    = "A"
   ttl     = 1
   proxied = false
+}
+
+# Variables
+variable "server_name" {
+  description = "Droplet name"
+  type        = string
+  default     = "seance-backend"
+}
+
+variable "droplet_size" {
+  description = "Droplet size"
+  type        = string
+  default     = "s-1vcpu-1gb"  # $6/month
+}
+
+variable "region" {
+  description = "DigitalOcean region"
+  type        = string
+  default     = "sfo3"
+}
+
+variable "ssh_public_key" {
+  description = "SSH public key for server access"
+  type        = string
+}
+
+variable "cloudflare_zone_id" {
+  description = "Cloudflare Zone ID for seance.dev"
+  type        = string
+}
+
+# Outputs
+output "server_ip" {
+  description = "Server IP address"
+  value       = digitalocean_droplet.seance_backend.ipv4_address
+}
+
+output "backend_domain" {
+  description = "Backend domain (DNS configured)"
+  value       = cloudflare_record.backend.hostname
+}
+
+output "app_domain" {
+  description = "App domain (DNS configured)"
+  value       = cloudflare_record.app.hostname
 }

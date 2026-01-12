@@ -46,7 +46,7 @@ cat ~/.ssh/id_ed25519.pub
 ### Step 2: Configure OpenTofu
 
 ```bash
-cd terraform
+cd /Users/nicole/Documents/seance-signaling  # Or your repo path
 
 # Create config file
 cat > terraform.tfvars <<EOF
@@ -113,6 +113,8 @@ devenv --profile prod up
 - `nix/disko-config.nix` - Disk partitioning
 - `devenv.nix` - App environment (same locally and prod)
 - `flake.nix` - Nix flake tying it together
+- `main.tf` - OpenTofu/Terraform infrastructure config
+- `terraform.tfvars` - Your deployment variables (gitignored)
 
 **Zero drift** - NixOS ensures system is identical to config. devenv ensures app runs the same.
 
@@ -131,7 +133,6 @@ systemctl restart seance-backend
 
 Edit `nix/nixos-configuration.nix`, then:
 ```bash
-cd terraform
 tofu apply  # Rebuilds and deploys NixOS
 ```
 
@@ -144,21 +145,19 @@ journalctl -u seance-backend -f
 
 ### Scale Server
 
-Edit `terraform/terraform.tfvars`:
+Edit `terraform.tfvars`:
 ```hcl
 droplet_size = "s-2vcpu-2gb"  # $18/month
 ```
 
 Apply:
 ```bash
-cd terraform
 tofu apply
 ```
 
 ### Destroy
 
 ```bash
-cd terraform
 tofu destroy
 ```
 
