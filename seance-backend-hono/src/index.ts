@@ -7,7 +7,7 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, cpSync } fr
 import { join, extname } from 'path';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
-import { createPublicKey, verify } from 'crypto';
+import { createHash } from 'crypto';
 
 const app = new OpenAPIHono();
 
@@ -22,34 +22,34 @@ function loadConfig() {
     const configContent = readFileSync(configPath, 'utf-8');
     const lines = configContent.split('\n');
 
-    let inBuilderKeys = false;
-    const builderKeys: string[] = [];
+    let inBuilderKeyHashes = false;
+    const builderKeyHashes: string[] = [];
 
     for (const line of lines) {
-      if (line.trim() === 'builder_keys:') {
-        inBuilderKeys = true;
+      if (line.trim() === 'builder_key_hashes:') {
+        inBuilderKeyHashes = true;
         continue;
       }
 
-      if (inBuilderKeys) {
+      if (inBuilderKeyHashes) {
         // Stop parsing if we hit a non-indented line (next section)
         if (line.length > 0 && !line.startsWith(' ') && !line.startsWith('\t')) {
           break;
         }
 
         // Parse array items (lines starting with "  - ")
-        const match = line.match(/^\s*-\s+(.+)$/);
+        const match = line.match(/^\s*-\s+"?([a-f0-9]{64})"?/);
         if (match) {
-          builderKeys.push(match[1].trim());
+          builderKeyHashes.push(match[1].trim());
         }
       }
     }
 
-    if (builderKeys.length === 0) {
-      throw new Error('No builder_keys found in config.yml');
+    if (builderKeyHashes.length === 0) {
+      throw new Error('No builder_key_hashes found in config.yml');
     }
 
-    return { builderKeys };
+    return { builderKeyHashes };
   } catch (error) {
     console.error('[Config] Failed to load config.yml:', error);
     throw error;
@@ -57,7 +57,7 @@ function loadConfig() {
 }
 
 const config = loadConfig();
-console.log(`[Config] Loaded ${config.builderKeys.length} builder key(s)`);
+console.log(`[Config] Loaded ${config.builderKeyHashes.length} builder key hash(es)`);
 
 // MIME type mapping for static files
 const MIME_TYPES: Record<string, string> = {
@@ -148,7 +148,7 @@ const deployRoute = createRoute({
   method: 'post',
   path: '/deploy',
   summary: 'Deploy artifacts from CI/CD',
-  description: 'Accepts signed deployment payloads from GitHub Actions. Requires Ed25519 signature in X-Signature header.',
+  description: 'Accepts deployment payloads from GitHub Actions. Requires builder API key in X-Builder-Key header.',
   request: {
     body: {
       content: {
@@ -158,7 +158,7 @@ const deployRoute = createRoute({
       },
     },
     headers: z.object({
-      'x-signature': z.string().openapi({ description: 'Ed25519 signature of request body (base64)' }),
+      'x-builder-key': z.string().openapi({ description: 'Builder API key (SHA-256 hash stored in config.yml)' }),
     }),
   },
   responses: {
@@ -208,73 +208,24 @@ const versionRoute = createRoute({
 
 // Register OpenAPI routes
 app.openapi(deployRoute, async (c) => {
-  const signatureHeader = c.req.header('X-Signature');
+  const builderKey = c.req.header('X-Builder-Key');
 
-  if (!signatureHeader) {
-    return c.json({ error: 'Missing signature' }, 401);
+  if (!builderKey) {
+    return c.json({ error: 'Missing builder key' }, 401);
   }
 
-  // Get raw body for signature verification
+  // Hash the provided key and check against configured hashes
+  const keyHash = createHash('sha256').update(builderKey).digest('hex');
+
+  if (!config.builderKeyHashes.includes(keyHash)) {
+    console.error('[Deploy] Invalid builder key (hash not found)');
+    return c.json({ error: 'Invalid builder key' }, 401);
+  }
+
+  console.log('[Deploy] Builder key verified successfully');
+
+  // Get raw body
   const bodyText = await c.req.text();
-  const signature = Buffer.from(signatureHeader, 'base64');
-
-  // Try verifying with each configured builder key
-  let verified = false;
-  let lastError: Error | null = null;
-
-  for (const builderPublicKey of config.builderKeys) {
-    try {
-      // Parse the public key (supports both SSH and PEM formats)
-      let publicKey;
-      if (builderPublicKey.startsWith('ssh-ed25519')) {
-        // SSH format: ssh-ed25519 AAAAC3... comment
-        const parts = builderPublicKey.split(' ');
-        if (parts.length < 2) {
-          throw new Error('Invalid SSH public key format');
-        }
-        const keyData = Buffer.from(parts[1], 'base64');
-        // Skip SSH wire format header (19 bytes for Ed25519)
-        const rawKey = keyData.slice(19);
-        publicKey = createPublicKey({
-          key: Buffer.concat([
-            Buffer.from('302a300506032b6570032100', 'hex'), // ASN.1 header for Ed25519
-            rawKey
-          ]),
-          format: 'der',
-          type: 'spki'
-        });
-      } else {
-        // PEM format
-        publicKey = createPublicKey(builderPublicKey);
-      }
-
-      // Verify signature
-      const isValid = verify(
-        null, // Ed25519 doesn't need digest algorithm
-        Buffer.from(bodyText),
-        publicKey,
-        signature
-      );
-
-      if (isValid) {
-        verified = true;
-        console.log('[Deploy] Signature verified successfully');
-        break;
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Unknown error');
-      // Try next key
-      continue;
-    }
-  }
-
-  if (!verified) {
-    console.error('[Deploy] Invalid signature (tried all keys)');
-    if (lastError) {
-      console.error('[Deploy] Last error:', lastError);
-    }
-    return c.json({ error: 'Invalid signature' }, 401);
-  }
 
   try {
     // Parse body (already read as text for signature verification)

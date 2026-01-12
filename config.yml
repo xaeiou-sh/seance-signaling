@@ -3,8 +3,8 @@
 # Server port
 port: 3000
 
-# Builder authentication keys (public keys)
-# These keys are used to verify deployment signatures from CI/CD
-# Multiple keys allow for key rotation without downtime
-builder_keys:
-  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdN84cICyRszh9B5whtQmAHMpvM5/XBfd7bP/EfTwJz seance-builder
+# Builder API key hashes (SHA-256)
+# Generate key: openssl rand -hex 32
+# Get hash: echo -n "YOUR_KEY" | shasum -a 256 | cut -d' ' -f1
+builder_key_hashes:
+  - "adf1e1bee2a545ca24690755a59ea58af30cf9f86692541a6a932a75dc831334"
