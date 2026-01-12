@@ -1,3 +1,4 @@
+{ lib, ... }:
 {
   disko.devices = {
     disk = {
@@ -9,7 +10,7 @@
           partitions = {
             boot = {
               size = "1M";
-              type = "EF02"; # BIOS boot
+              type = "EF02"; # BIOS boot partition
             };
             root = {
               size = "100%";
@@ -23,5 +24,11 @@
         };
       };
     };
+  };
+
+  # Configure GRUB for this disk
+  boot.loader.grub = {
+    device = "/dev/vda";
+    efiSupport = false;
   };
 }

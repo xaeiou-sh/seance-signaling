@@ -10,9 +10,8 @@
   # Enable flakes
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
-  # Boot
-  boot.loader.grub.enable = true;
-  boot.loader.grub.device = "/dev/vda";
+  # Boot - Let disko handle boot configuration
+  boot.loader.grub.enable = lib.mkDefault true;
 
   # Networking
   networking.hostName = "seance-backend";
