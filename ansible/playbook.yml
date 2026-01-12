@@ -1,5 +1,5 @@
 ---
-# Ansible playbook to provision Seance backend server on Rocky Linux 9
+# Ansible playbook to provision Seance backend server on Ubuntu 24.04
 # Uses Zellij for easy debugging - ssh in and `zellij attach seance-production`
 
 - name: Provision Seance Backend Server
@@ -15,17 +15,18 @@
 
   tasks:
     - name: Update package cache
-      dnf:
+      apt:
         update_cache: yes
+        cache_valid_time: 3600
 
     - name: Install required system packages
-      dnf:
+      apt:
         name:
           - curl
           - git
           - ca-certificates
           - gnupg
-          - xz
+          - xz-utils
           - zellij
         state: present
 
@@ -56,12 +57,34 @@
       environment:
         NIX_CONFIG: "experimental-features = nix-command flakes"
 
-    - name: Install Docker
-      dnf:
+    - name: Install Docker dependencies
+      apt:
         name:
-          - docker
-          - docker-compose
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
         state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
 
     - name: Start and enable Docker
       systemd:

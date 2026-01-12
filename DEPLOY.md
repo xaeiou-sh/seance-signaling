@@ -1,6 +1,6 @@
 # Deployment Guide
 
-Deploy Seance backend to DigitalOcean using Rocky Linux 9 + OpenTofu + Ansible.
+Deploy Seance backend to DigitalOcean using Ubuntu 24.04 + OpenTofu + Ansible.
 
 ## Prerequisites
 
@@ -64,7 +64,7 @@ tofu apply
 ```
 
 This creates:
-1. DigitalOcean Rocky Linux 9 droplet
+1. DigitalOcean Ubuntu 24.04 droplet
 2. Firewall (ports 22, 80, 443, 4444)
 3. Cloudflare DNS records (backend.seance.dev, app.seance.dev)
 4. Ansible inventory file (ansible/inventory.yml) with server IP
@@ -110,7 +110,7 @@ devenv up
 # Default profile: CADDY_DOMAIN=localhost:8080
 ```
 
-**Production (Rocky Linux + Zellij):**
+**Production (Ubuntu + Zellij):**
 - systemd service runs: `zellij --session seance-production --daemon -- devenv --profile prod up`
 - You can attach anytime: `ssh root@server`, then `zellij attach seance-production`
 - See real-time logs and debug interactively
@@ -217,7 +217,7 @@ journalctl -u seance-backend -xe
 ## Architecture
 
 ```
-Rocky Linux 9 (DigitalOcean)
+Ubuntu 24.04 (DigitalOcean)
   ├── System packages (git, docker, zellij)
   ├── Nix (multi-user install)
   ├── devenv (via Nix)
@@ -245,10 +245,10 @@ Cloudflare DNS:
 - Interactive debugging when things go wrong
 
 **Simplicity:**
-- Rocky Linux 9 is stable, enterprise-grade RHEL clone
-- Up-to-date packages (newer than Ubuntu LTS)
+- Ubuntu 24.04 is widely used and well-documented
+- Up-to-date packages (released April 2024)
 - Ansible is straightforward and battle-tested
-- No complex NixOS cross-compilation issues
+- No fighting with SELinux or RHEL-specific quirks
 
 **Same Environment:**
 - devenv.nix ensures local and prod are identical

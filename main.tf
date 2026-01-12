@@ -22,10 +22,10 @@ resource "digitalocean_ssh_key" "default" {
   public_key = var.ssh_public_key
 }
 
-# Create Rocky Linux 9 droplet
+# Create Ubuntu 24.04 droplet
 resource "digitalocean_droplet" "seance_backend" {
   name        = var.server_name
-  image       = "rockylinux-9-x64"
+  image       = "ubuntu-24-04-x64"
   size        = var.droplet_size
   region      = var.region
   ssh_keys    = [digitalocean_ssh_key.default.fingerprint]
