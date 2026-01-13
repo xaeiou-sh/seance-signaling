@@ -3,20 +3,37 @@
 
 {
 	admin off
+	auto_https off
 }
 
 # Backend domain (set by CADDY_DOMAIN env var)
 {$CADDY_DOMAIN} {
-	reverse_proxy localhost:3000
+	handle_path /signaling* {
+		reverse_proxy localhost:4444 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+	handle {
+		reverse_proxy localhost:3000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
 	log {
 		output stderr
 		format console
 	}
 }
 
-# App domain (set by APP_DOMAIN env var, empty for local dev)
-{$APP_DOMAIN:} {
-	reverse_proxy localhost:3000
+# App domain (set by APP_DOMAIN env var)
+{$APP_DOMAIN} {
+	reverse_proxy localhost:3000 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
 	log {
 		output stderr
 		format console

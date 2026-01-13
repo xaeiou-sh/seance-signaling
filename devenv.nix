@@ -11,8 +11,8 @@
 
   # Default environment (local development)
   env.PORT = "3000";
-  env.CADDY_DOMAIN = "localhost:8080";
-  env.APP_DOMAIN = "";
+  env.CADDY_DOMAIN = "http://localhost:8080";
+  env.APP_DOMAIN = "http://localhost:8081";
 
   # Production profile
   profiles.prod.module = {
@@ -49,7 +49,7 @@
 
   processes.update-server.exec = ''
     cd ${config.env.DEVENV_ROOT}/seance-backend-hono
-    export PORT=3000
+    npm install
     npm run start
   '';
 

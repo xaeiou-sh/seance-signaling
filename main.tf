@@ -113,7 +113,7 @@ variable "server_name" {
 variable "droplet_size" {
   description = "Droplet size"
   type        = string
-  default     = "s-1vcpu-1gb"  # $6/month
+  default     = "s-1vcpu-2gb"  # $6/month
 }
 
 variable "region" {

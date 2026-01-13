@@ -27,8 +27,26 @@
           - ca-certificates
           - gnupg
           - xz-utils
-          - zellij
         state: present
+
+    - name: Check if Zellij is installed
+      stat:
+        path: /usr/local/bin/zellij
+      register: zellij_installed
+
+    - name: Download Zellij binary
+      get_url:
+        url: https://github.com/zellij-org/zellij/releases/latest/download/zellij-x86_64-unknown-linux-musl.tar.gz
+        dest: /tmp/zellij.tar.gz
+      when: not zellij_installed.stat.exists
+
+    - name: Extract Zellij to /usr/local/bin
+      unarchive:
+        src: /tmp/zellij.tar.gz
+        dest: /usr/local/bin/
+        remote_src: yes
+        mode: '0755'
+      when: not zellij_installed.stat.exists
 
     - name: Check if Nix is already installed
       stat:
