@@ -3,7 +3,6 @@
 
 {
 	admin off
-	auto_https off
 }
 
 # Backend domain (set by CADDY_DOMAIN env var)
