@@ -148,29 +148,6 @@ const ReleasesJsonSchema = Type.Object({
   url: Type.String({ examples: ['https://backend.seance.dev/updates/releases/darwin-arm64/Seance-2026.01.000-mac.zip'] }),
 });
 
-// Root route - serve SPA index.html
-app.get('/', {
-  schema: {
-    description: 'Root route - serves the web app',
-    response: {
-      200: Type.String({ contentMediaType: 'text/html' }),
-    },
-  },
-}, async (request, reply) => {
-  try {
-    const indexPath = join(process.cwd(), 'web', 'index.html');
-    if (existsSync(indexPath)) {
-      const content = readFileSync(indexPath, 'utf-8');
-      reply.type('text/html').send(content);
-      return;
-    }
-    reply.send('Seance Update Server');
-  } catch (error) {
-    console.error('[Static File] Error serving index.html at root:', error);
-    reply.send('Seance Update Server');
-  }
-});
-
 // Deploy endpoint
 app.post('/deploy', {
   schema: {
@@ -207,7 +184,8 @@ app.post('/deploy', {
   console.log('[Deploy] Builder key verified successfully');
 
   try {
-    const { files, clearWeb } = request.body;
+    const body = request.body as { files: Array<{ path: string; content: string }>; clearWeb?: boolean };
+    const { files, clearWeb } = body;
 
     console.log(`[Deploy] Deploying ${files.length} files`);
 
@@ -409,7 +387,7 @@ app.get('/updates/darwin-arm64/download-latest', {
 await app.register(fastifyStatic, {
   root: join(process.cwd(), 'web'),
   prefix: '/',
-  wildcard: false,
+  index: ['index.html'],
 });
 
 // SPA fallback - serve index.html for client-side routing
