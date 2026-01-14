@@ -1,16 +1,18 @@
 // Seance Backend Server
 // Serves desktop app updates + web app
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { swaggerUI } from '@hono/swagger-ui';
-import { serveStatic } from '@hono/node-server/serve-static';
-import { bodyLimit } from 'hono/body-limit';
-import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync, cpSync } from 'fs';
-import { join, extname } from 'path';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
+import Fastify from 'fastify';
+import fastifySwagger from '@fastify/swagger';
+import fastifySwaggerUI from '@fastify/swagger-ui';
+import fastifyStatic from '@fastify/static';
+import { Type } from '@sinclair/typebox';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'fs';
+import { join } from 'path';
 import { createHash } from 'crypto';
 
-const app = new OpenAPIHono();
+const app = Fastify({
+  logger: true,
+  bodyLimit: 500 * 1024 * 1024, // 500 MB for large deployments
+});
 
 // Load configuration from config.yml
 function loadConfig() {
@@ -33,12 +35,10 @@ function loadConfig() {
       }
 
       if (inBuilderKeyHashes) {
-        // Stop parsing if we hit a non-indented line (next section)
         if (line.length > 0 && !line.startsWith(' ') && !line.startsWith('\t')) {
           break;
         }
 
-        // Parse array items (lines starting with "  - ")
         const match = line.match(/^\s*-\s+"?([a-f0-9]{64})"?/);
         if (match) {
           builderKeyHashes.push(match[1].trim());
@@ -59,24 +59,6 @@ function loadConfig() {
 
 const config = loadConfig();
 console.log(`[Config] Loaded ${config.builderKeyHashes.length} builder key hash(es)`);
-
-// MIME type mapping for static files
-const MIME_TYPES: Record<string, string> = {
-  '.html': 'text/html',
-  '.js': 'application/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-  '.eot': 'application/vnd.ms-fontobject',
-};
 
 // Helper to read version.json
 function getVersionData() {
@@ -107,121 +89,110 @@ function readReleaseFile(filePath: string): Buffer | null {
   }
 }
 
-// Health check (plain route, not OpenAPI)
-app.get('/', (c) => c.text('Seance Update Server'));
-
-// Define Zod schemas for OpenAPI
-const DeployFileSchema = z.object({
-  path: z.string().openapi({ example: 'releases/darwin-arm64/Seance-1.0.0-mac.zip' }),
-  content: z.string().openapi({ example: 'base64-encoded-content...', description: 'Base64-encoded file content' }),
-});
-
-const DeployRequestSchema = z.object({
-  files: z.array(DeployFileSchema),
-  clearWeb: z.boolean().optional().openapi({ description: 'Clear web directory before deployment' }),
-});
-
-const DeployResponseSchema = z.object({
-  success: z.boolean(),
-  filesDeployed: z.number(),
-  timestamp: z.string().openapi({ example: '2026-01-11T00:00:00.000Z' }),
-});
-
-const ErrorResponseSchema = z.object({
-  error: z.string(),
-  message: z.string().optional(),
-});
-
-const VersionResponseSchema = z.object({
-  web: z.object({
-    version: z.string(),
-    deployed: z.string(),
-  }),
-  desktop: z.object({
-    version: z.string(),
-    released: z.string(),
-    downloadUrl: z.string(),
-  }),
-});
-
-// Define OpenAPI routes
-const deployRoute = createRoute({
-  method: 'post',
-  path: '/deploy',
-  summary: 'Deploy artifacts from CI/CD',
-  description: 'Accepts deployment payloads from GitHub Actions. Requires builder API key in X-Builder-Key header.',
-  request: {
-    body: {
-      content: {
-        'application/json': {
-          schema: DeployRequestSchema,
-        },
-      },
+// Register Swagger/OpenAPI
+await app.register(fastifySwagger, {
+  openapi: {
+    info: {
+      title: 'Seance Backend API',
+      description: 'Backend API for Seance desktop updates and web app hosting',
+      version: '1.0.0',
     },
-    headers: z.object({
-      'x-builder-key': z.string().openapi({ description: 'Builder API key (SHA-256 hash stored in config.yml)' }),
+    servers: [
+      { url: 'http://localhost:3000', description: 'Local server' },
+      { url: 'https://backend.seance.dev', description: 'Production server' },
+    ],
+  },
+});
+
+await app.register(fastifySwaggerUI, {
+  routePrefix: '/ui',
+});
+
+// TypeBox schemas
+const DeployFileSchema = Type.Object({
+  path: Type.String({ examples: ['releases/darwin-arm64/Seance-1.0.0-mac.zip'] }),
+  content: Type.String({ description: 'Base64-encoded file content' }),
+});
+
+const DeployRequestSchema = Type.Object({
+  files: Type.Array(DeployFileSchema),
+  clearWeb: Type.Optional(Type.Boolean({ description: 'Clear web directory before deployment' })),
+});
+
+const DeployResponseSchema = Type.Object({
+  success: Type.Boolean(),
+  filesDeployed: Type.Number(),
+  timestamp: Type.String({ examples: ['2026-01-11T00:00:00.000Z'] }),
+});
+
+const ErrorResponseSchema = Type.Object({
+  error: Type.String(),
+  message: Type.Optional(Type.String()),
+});
+
+const VersionResponseSchema = Type.Object({
+  web: Type.Object({
+    version: Type.String(),
+    deployed: Type.String(),
+  }),
+  desktop: Type.Object({
+    version: Type.String(),
+    released: Type.String(),
+    downloadUrl: Type.String(),
+  }),
+});
+
+const ReleasesJsonSchema = Type.Object({
+  version: Type.String({ examples: ['2026.01.000'] }),
+  releaseDate: Type.String({ examples: ['2026-01-11T00:00:00.000Z'] }),
+  url: Type.String({ examples: ['https://backend.seance.dev/updates/releases/darwin-arm64/Seance-2026.01.000-mac.zip'] }),
+});
+
+// Root route - serve SPA index.html
+app.get('/', {
+  schema: {
+    description: 'Root route - serves the web app',
+    response: {
+      200: Type.String({ contentMediaType: 'text/html' }),
+    },
+  },
+}, async (request, reply) => {
+  try {
+    const indexPath = join(process.cwd(), 'web', 'index.html');
+    if (existsSync(indexPath)) {
+      const content = readFileSync(indexPath, 'utf-8');
+      reply.type('text/html').send(content);
+      return;
+    }
+    reply.send('Seance Update Server');
+  } catch (error) {
+    console.error('[Static File] Error serving index.html at root:', error);
+    reply.send('Seance Update Server');
+  }
+});
+
+// Deploy endpoint
+app.post('/deploy', {
+  schema: {
+    description: 'Deploy artifacts from CI/CD',
+    summary: 'Deploy artifacts from GitHub Actions',
+    headers: Type.Object({
+      'x-builder-key': Type.String({ description: 'Builder API key (SHA-256 hash stored in config.yml)' }),
     }),
-  },
-  responses: {
-    200: {
-      content: {
-        'application/json': {
-          schema: DeployResponseSchema,
-        },
-      },
-      description: 'Deployment successful',
-    },
-    401: {
-      content: {
-        'application/json': {
-          schema: ErrorResponseSchema,
-        },
-      },
-      description: 'Missing or invalid signature',
+    body: DeployRequestSchema,
+    response: {
+      200: DeployResponseSchema,
+      401: ErrorResponseSchema,
+      400: ErrorResponseSchema,
+      500: ErrorResponseSchema,
     },
   },
-});
-
-const versionRoute = createRoute({
-  method: 'get',
-  path: '/updates/api/version.json',
-  summary: 'Get version information',
-  description: 'Returns current versions for web and desktop apps',
-  responses: {
-    200: {
-      content: {
-        'application/json': {
-          schema: VersionResponseSchema,
-        },
-      },
-      description: 'Version information',
-    },
-    500: {
-      content: {
-        'application/json': {
-          schema: ErrorResponseSchema,
-        },
-      },
-      description: 'Version data not found',
-    },
-  },
-});
-
-// Register OpenAPI routes
-// Apply body limit middleware to deploy endpoint (500 MB for large payloads)
-app.use('/deploy', bodyLimit({
-  maxSize: 500 * 1024 * 1024, // 500 MB
-  onError: (c) => {
-    console.error('[Deploy] Payload too large');
-    return c.json({ error: 'Payload too large' }, 413);
-  },
-}));
-
-app.openapi(deployRoute, async (c) => {
-  const builderKey = c.req.header('X-Builder-Key');
+}, async (request, reply) => {
+  const builderKey = request.headers['x-builder-key'] as string | undefined;
 
   if (!builderKey) {
-    return c.json({ error: 'Missing builder key' }, 401);
+    reply.code(401).send({ error: 'Missing builder key' });
+    return;
   }
 
   // Hash the provided key and check against configured hashes
@@ -229,22 +200,14 @@ app.openapi(deployRoute, async (c) => {
 
   if (!config.builderKeyHashes.includes(keyHash)) {
     console.error('[Deploy] Invalid builder key (hash not found)');
-    return c.json({ error: 'Invalid builder key' }, 401);
+    reply.code(401).send({ error: 'Invalid builder key' });
+    return;
   }
 
   console.log('[Deploy] Builder key verified successfully');
 
-  // Get raw body
-  const bodyText = await c.req.text();
-
   try {
-    // Parse body (already read as text for signature verification)
-    const body = JSON.parse(bodyText);
-    const { files, clearWeb } = body;
-
-    if (!Array.isArray(files)) {
-      return c.json({ error: 'Invalid request: files must be an array' }, 400);
-    }
+    const { files, clearWeb } = request.body;
 
     console.log(`[Deploy] Deploying ${files.length} files`);
 
@@ -256,7 +219,6 @@ app.openapi(deployRoute, async (c) => {
         console.log('[Deploy] Cleared web directory');
       }
       mkdirSync(webPath, { recursive: true });
-      // Keep .gitkeep
       writeFileSync(join(webPath, '.gitkeep'), '');
     }
 
@@ -273,7 +235,8 @@ app.openapi(deployRoute, async (c) => {
       const normalizedPath = join(process.cwd(), file.path);
       if (!normalizedPath.startsWith(process.cwd())) {
         console.error('[Deploy] Path traversal attempt:', file.path);
-        return c.json({ error: 'Invalid file path' }, 400);
+        reply.code(400).send({ error: 'Invalid file path' });
+        return;
       }
 
       // Create directory if needed
@@ -289,27 +252,57 @@ app.openapi(deployRoute, async (c) => {
     }
 
     console.log('[Deploy] Deployment complete');
-    return c.json({
+    reply.send({
       success: true,
       filesDeployed: files.length,
       timestamp: new Date().toISOString()
     });
-
   } catch (error) {
     console.error('[Deploy] Deployment failed:', error);
-    return c.json({
+    reply.code(500).send({
       error: 'Deployment failed',
       message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
+    });
   }
 });
 
-// Serve update manifest (JSON format for electron-updater)
-app.get('/updates/darwin-arm64/RELEASES.json', (c) => {
+// Version API
+app.get('/updates/api/version.json', {
+  schema: {
+    description: 'Get version information',
+    summary: 'Returns current versions for web and desktop apps',
+    response: {
+      200: VersionResponseSchema,
+      500: ErrorResponseSchema,
+    },
+  },
+}, async (request, reply) => {
   const versionData = getVersionData();
 
   if (!versionData) {
-    return c.json({ error: 'Version data not found' }, 500);
+    reply.code(500).send({ error: 'Version data not found' });
+    return;
+  }
+
+  reply.send(versionData);
+});
+
+// Serve update manifest (JSON format for electron-updater)
+app.get('/updates/darwin-arm64/RELEASES.json', {
+  schema: {
+    description: 'Get release manifest (JSON)',
+    summary: 'Returns JSON manifest for electron-updater',
+    response: {
+      200: ReleasesJsonSchema,
+      500: ErrorResponseSchema,
+    },
+  },
+}, async (request, reply) => {
+  const versionData = getVersionData();
+
+  if (!versionData) {
+    reply.code(500).send({ error: 'Version data not found' });
+    return;
   }
 
   const manifest = {
@@ -318,112 +311,140 @@ app.get('/updates/darwin-arm64/RELEASES.json', (c) => {
     url: `https://backend.seance.dev/updates/releases/darwin-arm64/Seance-${versionData.desktop.version}-mac.zip`
   };
 
-  return c.json(manifest);
+  reply.send(manifest);
 });
 
 // Serve latest-mac.yml (YAML format for electron-updater)
-app.get('/updates/darwin-arm64/latest-mac.yml', (c) => {
+app.get('/updates/darwin-arm64/latest-mac.yml', {
+  schema: {
+    description: 'Get release manifest (YAML)',
+    summary: 'Returns YAML manifest for electron-updater',
+    response: {
+      200: Type.String({ contentMediaType: 'text/yaml' }),
+      404: Type.String(),
+    },
+  },
+}, async (request, reply) => {
   const manifest = readReleaseFile('darwin-arm64/latest-mac.yml');
 
   if (!manifest) {
-    return c.text('Manifest not found', 404);
+    reply.code(404).send('Manifest not found');
+    return;
   }
 
-  return c.body(manifest, 200, { 'Content-Type': 'text/yaml' });
+  reply.type('text/yaml').send(manifest);
 });
 
 // Serve .zip files
-app.get('/updates/releases/darwin-arm64/:filename', (c) => {
-  const filename = c.req.param('filename');
+app.get('/updates/releases/darwin-arm64/:filename', {
+  schema: {
+    description: 'Download specific release file',
+    summary: 'Downloads a specific version of the desktop app',
+    params: Type.Object({
+      filename: Type.String({ examples: ['Seance-2026.01.000-mac.zip'] }),
+    }),
+    response: {
+      200: Type.String({ contentMediaType: 'application/zip' }),
+      400: Type.String(),
+      404: Type.String(),
+    },
+  },
+}, async (request, reply) => {
+  const { filename } = request.params as { filename: string };
 
   // Security: prevent path traversal
   if (filename.includes('..') || filename.includes('/')) {
-    return c.text('Invalid filename', 400);
+    reply.code(400).send('Invalid filename');
+    return;
   }
 
   const fileData = readReleaseFile(`darwin-arm64/${filename}`);
 
   if (!fileData) {
-    return c.text('File not found', 404);
+    reply.code(404).send('File not found');
+    return;
   }
 
-  return c.body(fileData, 200, {
-    'Content-Type': 'application/zip',
-    'Content-Disposition': `attachment; filename="${filename}"`
-  });
+  reply
+    .type('application/zip')
+    .header('Content-Disposition', `attachment; filename="${filename}"`)
+    .send(fileData);
 });
 
-// Version API for web (OpenAPI route)
-app.openapi(versionRoute, (c) => {
+// Download latest version with proper filename
+app.get('/updates/darwin-arm64/download-latest', {
+  schema: {
+    description: 'Download latest release',
+    summary: 'Downloads the latest version of the desktop app with proper filename',
+    response: {
+      200: Type.String({ contentMediaType: 'application/zip' }),
+      404: Type.String(),
+      500: ErrorResponseSchema,
+    },
+  },
+}, async (request, reply) => {
   const versionData = getVersionData();
 
   if (!versionData) {
-    return c.json({ error: 'Version data not found' }, 500);
+    reply.code(500).send({ error: 'Version data not found' });
+    return;
   }
 
-  return c.json(versionData);
+  const version = versionData.desktop.version;
+  const filename = `Seance-${version}-mac.zip`;
+  const fileData = readReleaseFile(`darwin-arm64/${filename}`);
+
+  if (!fileData) {
+    reply.code(404).send('File not found');
+    return;
+  }
+
+  reply
+    .type('application/zip')
+    .header('Content-Disposition', `attachment; filename="${filename}"`)
+    .send(fileData);
 });
 
-// Generate OpenAPI documentation
-app.doc('/doc', {
-  openapi: '3.0.0',
-  info: {
-    title: 'Seance Backend API',
-    version: '1.0.0',
-    description: 'Backend API for Seance desktop updates and web app hosting',
-  },
-  servers: [
-    { url: 'http://localhost:3000', description: 'Local server' },
-    { url: 'https://backend.seance.dev', description: 'Production server' },
-  ],
+// Serve static files from web/ directory
+await app.register(fastifyStatic, {
+  root: join(process.cwd(), 'web'),
+  prefix: '/',
+  wildcard: false,
 });
-
-// Mount Swagger UI
-app.get('/ui', swaggerUI({ url: '/doc' }));
-
-// Serve static files from web/ directory with SPA fallback
-app.use('/*', serveStatic({ root: './web' }));
 
 // SPA fallback - serve index.html for client-side routing
-app.get('/*', (c) => {
-  const path = c.req.path;
-
+app.setNotFoundHandler(async (request, reply) => {
   // Don't apply SPA fallback to API routes
-  if (path.startsWith('/updates')) {
-    return c.text('Not found', 404);
+  if (request.url.startsWith('/updates')) {
+    reply.code(404).send('Not found');
+    return;
   }
 
-  // Serve index.html for SPA routes (no file extension)
-  if (!extname(path)) {
-    try {
-      const indexPath = join(process.cwd(), 'web', 'index.html');
-      if (existsSync(indexPath)) {
-        const content = readFileSync(indexPath);
-        return c.html(content.toString());
-      }
-    } catch (error) {
-      console.error('[Static File] Error serving index.html:', error);
+  // Serve index.html for SPA routes
+  try {
+    const indexPath = join(process.cwd(), 'web', 'index.html');
+    if (existsSync(indexPath)) {
+      const content = readFileSync(indexPath, 'utf-8');
+      reply.type('text/html').send(content);
+      return;
     }
+  } catch (error) {
+    console.error('[Static File] Error serving index.html:', error);
   }
 
-  return c.text('Not found', 404);
+  reply.code(404).send('Not found');
 });
 
 // Start server
-const port = process.env.PORT || 3000;
+const port = Number(process.env.PORT || 3000);
 
-export default app;
-
-// For Node.js runtime
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const { serve } = await import('@hono/node-server');
-
-  console.log(`🔮 Seance Update Server starting on port ${port}`);
+try {
+  await app.listen({ port, host: '0.0.0.0' });
+  console.log(`🔮 Seance Update Server started on port ${port}`);
   console.log(`   Health: http://localhost:${port}/`);
   console.log(`   Updates: http://localhost:${port}/updates/`);
-
-  serve({
-    fetch: app.fetch,
-    port: Number(port),
-  });
+  console.log(`   OpenAPI Docs: http://localhost:${port}/ui`);
+} catch (err) {
+  app.log.error(err);
+  process.exit(1);
 }
