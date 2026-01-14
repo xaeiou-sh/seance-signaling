@@ -110,7 +110,7 @@ await app.register(fastifySwaggerUI, {
 
 // TypeBox schemas
 const DeployFileSchema = Type.Object({
-  path: Type.String({ examples: ['releases/darwin-arm64/Seance-1.0.0-mac.zip'] }),
+  path: Type.String({ examples: ['releases/darwin-arm64/Seance-1.0.0-mac.dmg'] }),
   content: Type.String({ description: 'Base64-encoded file content' }),
 });
 
@@ -145,7 +145,7 @@ const VersionResponseSchema = Type.Object({
 const ReleasesJsonSchema = Type.Object({
   version: Type.String({ examples: ['2026.01.000'] }),
   releaseDate: Type.String({ examples: ['2026-01-11T00:00:00.000Z'] }),
-  url: Type.String({ examples: ['https://backend.seance.dev/updates/releases/darwin-arm64/Seance-2026.01.000-mac.zip'] }),
+  url: Type.String({ examples: ['https://backend.seance.dev/updates/releases/darwin-arm64/Seance-2026.01.000-mac.dmg'] }),
 });
 
 // Deploy endpoint
@@ -286,7 +286,7 @@ app.get('/updates/darwin-arm64/RELEASES.json', {
   const manifest = {
     version: versionData.desktop.version,
     releaseDate: versionData.desktop.released,
-    url: `https://backend.seance.dev/updates/releases/darwin-arm64/Seance-${versionData.desktop.version}-mac.zip`
+    url: `https://backend.seance.dev/updates/releases/darwin-arm64/Seance-${versionData.desktop.version}-mac.dmg`
   };
 
   reply.send(manifest);
@@ -313,16 +313,16 @@ app.get('/updates/darwin-arm64/latest-mac.yml', {
   reply.type('text/yaml').send(manifest);
 });
 
-// Serve .zip files
+// Serve .dmg files
 app.get('/updates/releases/darwin-arm64/:filename', {
   schema: {
     description: 'Download specific release file',
     summary: 'Downloads a specific version of the desktop app',
     params: Type.Object({
-      filename: Type.String({ examples: ['Seance-2026.01.000-mac.zip'] }),
+      filename: Type.String({ examples: ['Seance-2026.01.000-mac.dmg'] }),
     }),
     response: {
-      200: Type.String({ contentMediaType: 'application/zip' }),
+      200: Type.String({ contentMediaType: 'application/x-apple-diskimage' }),
       400: Type.String(),
       404: Type.String(),
     },
@@ -344,7 +344,7 @@ app.get('/updates/releases/darwin-arm64/:filename', {
   }
 
   reply
-    .type('application/zip')
+    .type('application/x-apple-diskimage')
     .header('Content-Disposition', `attachment; filename="${filename}"`)
     .send(fileData);
 });
@@ -355,7 +355,7 @@ app.get('/updates/darwin-arm64/download-latest', {
     description: 'Download latest release',
     summary: 'Downloads the latest version of the desktop app with proper filename',
     response: {
-      200: Type.String({ contentMediaType: 'application/zip' }),
+      200: Type.String({ contentMediaType: 'application/x-apple-diskimage' }),
       404: Type.String(),
       500: ErrorResponseSchema,
     },
@@ -369,7 +369,7 @@ app.get('/updates/darwin-arm64/download-latest', {
   }
 
   const version = versionData.desktop.version;
-  const filename = `Seance-${version}-mac.zip`;
+  const filename = `Seance-${version}-mac.dmg`;
   const fileData = readReleaseFile(`darwin-arm64/${filename}`);
 
   if (!fileData) {
@@ -378,7 +378,7 @@ app.get('/updates/darwin-arm64/download-latest', {
   }
 
   reply
-    .type('application/zip')
+    .type('application/x-apple-diskimage')
     .header('Content-Disposition', `attachment; filename="${filename}"`)
     .send(fileData);
 });
