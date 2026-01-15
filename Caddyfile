@@ -26,7 +26,8 @@
 		}
 
 		handle {
-			rewrite * /static/{path}
+			# Strip /beholder prefix, keeping /static/ path
+			uri strip_prefix /beholder
 			reverse_proxy https://us-assets.i.posthog.com:443 {
 				header_up Host us-assets.i.posthog.com
 			}
@@ -50,7 +51,8 @@
 		}
 
 		handle {
-			rewrite * {path}
+			# Strip /beholder prefix before proxying to PostHog
+			uri strip_prefix /beholder
 			reverse_proxy https://us.i.posthog.com:443 {
 				header_up Host us.i.posthog.com
 			}
