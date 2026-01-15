@@ -8,32 +8,92 @@
 # Backend domain (set by CADDY_DOMAIN env var)
 {$CADDY_DOMAIN} {
 	# PostHog reverse proxy - routes analytics through our domain to bypass ad blockers
-	handle_path /beholder/static* {
-		rewrite * /static/{path}
-		reverse_proxy https://us-assets.i.posthog.com:443 {
-			header_up Host us-assets.i.posthog.com
-			header_down -Access-Control-Allow-Origin
+	# Enable CORS for all domains to avoid debugging issues
+	@beholder_static {
+		path /beholder/static*
+	}
+	handle @beholder_static {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+		header Access-Control-Allow-Headers "Content-Type, Authorization"
+
+		# Handle preflight requests
+		@options {
+			method OPTIONS
+		}
+		handle @options {
+			respond 204
+		}
+
+		handle {
+			rewrite * /static/{path}
+			reverse_proxy https://us-assets.i.posthog.com:443 {
+				header_up Host us-assets.i.posthog.com
+			}
 		}
 	}
 
-	handle_path /beholder* {
-		rewrite * {path}
-		reverse_proxy https://us.i.posthog.com:443 {
-			header_up Host us.i.posthog.com
-			header_down -Access-Control-Allow-Origin
+	@beholder {
+		path /beholder*
+	}
+	handle @beholder {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+		header Access-Control-Allow-Headers "Content-Type, Authorization"
+
+		# Handle preflight requests
+		@options {
+			method OPTIONS
+		}
+		handle @options {
+			respond 204
+		}
+
+		handle {
+			rewrite * {path}
+			reverse_proxy https://us.i.posthog.com:443 {
+				header_up Host us.i.posthog.com
+			}
 		}
 	}
 
 	# WebRTC signaling server
-	handle_path /signaling* {
-		reverse_proxy localhost:4444 {
-			header_up Host {host}
-			header_up X-Real-IP {remote_host}
+	@signaling {
+		path /signaling*
+	}
+	handle @signaling {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+		header Access-Control-Allow-Headers "Content-Type, Authorization"
+
+		@options {
+			method OPTIONS
+		}
+		handle @options {
+			respond 204
+		}
+
+		handle {
+			reverse_proxy localhost:4444 {
+				header_up Host {host}
+				header_up X-Real-IP {remote_host}
+			}
 		}
 	}
 
 	# Default: backend API/update server
 	handle {
+		header Access-Control-Allow-Origin "*"
+		header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+		header Access-Control-Allow-Headers "Content-Type, Authorization"
+
+		@options {
+			method OPTIONS
+		}
+		handle @options {
+			respond 204
+		}
+
 		reverse_proxy localhost:3000 {
 			header_up Host {host}
 			header_up X-Real-IP {remote_host}
@@ -48,12 +108,24 @@
 
 # App domain (set by APP_DOMAIN env var)
 {$APP_DOMAIN} {
+	header Access-Control-Allow-Origin "*"
+	header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+	header Access-Control-Allow-Headers "Content-Type, Authorization"
+
+	@options {
+		method OPTIONS
+	}
+	handle @options {
+		respond 204
+	}
+
 	reverse_proxy localhost:3000 {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Forwarded-Proto {scheme}
 	}
+
 	log {
 		output stderr
 		format console
