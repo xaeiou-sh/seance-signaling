@@ -1,0 +1,250 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   XAEIOU DESIGN SYSTEM
+   Aesthetic: Cyberpunk Terminal / Neon Hacker
+
+   COLOR PALETTE:
+   - Void:     #000000 (pure black - dominant background)
+   - Mist:     #DDDFDF (pale gray - muted text, subtle elements)
+   - Neon:     #2FFF00 (electric green - primary actions, success)
+   - Flame:    #FF6F00 (orange - warnings, highlights, energy)
+   - Phantom:  #5D00FF (purple - glows, special effects, mystery)
+   - Pure:     #FFFFFF (white - high contrast text)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@font-face {
+  font-family: 'Cartridge';
+  src: url('/fonts/cartridge.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ─── Core Palette ─── */
+  --void: #000000;
+  --mist: #DDDFDF;
+  --neon: #2FFF00;
+  --flame: #2FFF00;
+  --phantom: #5D00FF;
+  --pure: #FFFFFF;
+
+  /* ─── Semantic Colors ─── */
+  --background: var(--void);
+  --foreground: var(--pure);
+  --primary: var(--neon);
+  --primary-foreground: var(--void);
+  --secondary: #0a0a0a;
+  --secondary-foreground: var(--mist);
+  --accent: var(--phantom);
+  --accent-foreground: var(--pure);
+  --muted: #111111;
+  --muted-foreground: var(--mist);
+  --destructive: var(--flame);
+  --destructive-foreground: var(--void);
+  --border: #1a1a1a;
+  --input: #0d0d0d;
+  --ring: var(--neon);
+
+  /* ─── RGB Values for Glows ─── */
+  --neon-rgb: 47, 255, 0;
+  --flame-rgb: 47, 255, 0;
+  --phantom-rgb: 93, 0, 255;
+  --pure-rgb: 255, 255, 255;
+
+  /* ─── Glow Intensities ─── */
+  --glow-sm: 0 0 10px;
+  --glow-md: 0 0 20px;
+  --glow-lg: 0 0 40px;
+  --glow-xl: 0 0 60px;
+}
+
+@theme inline {
+  /* ─── Core Palette ─── */
+  --color-void: var(--void);
+  --color-mist: var(--mist);
+  --color-neon: var(--neon);
+  --color-flame: var(--flame);
+  --color-phantom: var(--phantom);
+  --color-pure: var(--pure);
+
+  /* ─── Semantic ─── */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* ─── Typography ─── */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-cartridge: "Cartridge", monospace;
+  --font-display: "Cartridge", "IBM Plex Mono", monospace;
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GLOW UTILITIES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer utilities {
+  /* Neon Green Glows */
+  .glow-neon {
+    box-shadow: var(--glow-md) rgba(var(--neon-rgb), 0.5);
+  }
+  .glow-neon-intense {
+    box-shadow: var(--glow-lg) rgba(var(--neon-rgb), 0.6), var(--glow-sm) rgba(var(--neon-rgb), 0.8);
+  }
+  .text-glow-neon {
+    text-shadow: var(--glow-sm) rgba(var(--neon-rgb), 0.8);
+  }
+
+  /* Phantom Purple Glows */
+  .glow-phantom {
+    box-shadow: var(--glow-md) rgba(var(--phantom-rgb), 0.5);
+  }
+  .glow-phantom-intense {
+    box-shadow: var(--glow-lg) rgba(var(--phantom-rgb), 0.6), var(--glow-sm) rgba(var(--phantom-rgb), 0.8);
+  }
+  .text-glow-phantom {
+    text-shadow: var(--glow-sm) rgba(var(--phantom-rgb), 0.8);
+  }
+
+  /* Flame Orange Glows */
+  .glow-flame {
+    box-shadow: var(--glow-md) rgba(var(--flame-rgb), 0.5);
+  }
+  .glow-flame-intense {
+    box-shadow: var(--glow-lg) rgba(var(--flame-rgb), 0.6), var(--glow-sm) rgba(var(--flame-rgb), 0.8);
+  }
+  .text-glow-flame {
+    text-shadow: var(--glow-sm) rgba(var(--flame-rgb), 0.8);
+  }
+
+  /* Border Glows */
+  .border-glow-neon {
+    border-color: var(--neon);
+    box-shadow: inset 0 0 20px rgba(var(--neon-rgb), 0.1), var(--glow-sm) rgba(var(--neon-rgb), 0.3);
+  }
+  .border-glow-phantom {
+    border-color: var(--phantom);
+    box-shadow: inset 0 0 20px rgba(var(--phantom-rgb), 0.1), var(--glow-sm) rgba(var(--phantom-rgb), 0.3);
+  }
+  .border-glow-flame {
+    border-color: var(--flame);
+    box-shadow: inset 0 0 20px rgba(var(--flame-rgb), 0.1), var(--glow-sm) rgba(var(--flame-rgb), 0.3);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ANIMATION KEYFRAMES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes pulse-neon {
+  0%, 100% {
+    box-shadow: var(--glow-md) rgba(var(--neon-rgb), 0.4);
+  }
+  50% {
+    box-shadow: var(--glow-lg) rgba(var(--neon-rgb), 0.7);
+  }
+}
+
+@keyframes pulse-phantom {
+  0%, 100% {
+    box-shadow: var(--glow-md) rgba(var(--phantom-rgb), 0.4);
+  }
+  50% {
+    box-shadow: var(--glow-lg) rgba(var(--phantom-rgb), 0.7);
+  }
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+  75% { opacity: 0.95; }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@layer utilities {
+  .animate-pulse-neon {
+    animation: pulse-neon 2s ease-in-out infinite;
+  }
+  .animate-pulse-phantom {
+    animation: pulse-phantom 2s ease-in-out infinite;
+  }
+  .animate-flicker {
+    animation: flicker 3s ease-in-out infinite;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TLDRAW CURSOR OVERLAY
+   Make tldraw background transparent for decorative cursor demo
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tldraw-cursor-overlay .tl-background {
+  background: transparent !important;
+}
+
+.tldraw-cursor-overlay .tl-canvas {
+  background: transparent !important;
+}
+
+.tldraw-cursor-overlay [data-testid="canvas"] {
+  background: transparent !important;
+}
+
+/* All cursor chat messages should have black text */
+.tldraw-cursor-overlay .tl-cursor-chat,
+.tldraw-cursor-overlay .tl-cursor-chat__bubble,
+.tldraw-cursor-overlay .tl-collaborator__chat,
+.tldraw-cursor-overlay [class*="chat"] {
+  color: #000000 !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GRADIENT UTILITIES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer utilities {
+  .gradient-neon-phantom {
+    background: linear-gradient(135deg, var(--neon) 0%, var(--phantom) 100%);
+  }
+  .gradient-flame-neon {
+    background: linear-gradient(135deg, var(--flame) 0%, var(--neon) 100%);
+  }
+  .gradient-phantom-flame {
+    background: linear-gradient(135deg, var(--phantom) 0%, var(--flame) 100%);
+  }
+  .gradient-void-radial {
+    background: radial-gradient(ellipse at center, #111111 0%, var(--void) 70%);
+  }
+}
