@@ -1,13 +1,24 @@
 # Caddy reverse proxy for Seance backend
 # Configured via environment variables set in devenv.nix
+# Uses .localhost domains with automatic HTTPS for local development
 
 {
 	admin off
+	# Automatic HTTPS is enabled by default for all domains
 }
 
 # Authelia authentication server
-http://localhost:9091 {
-	reverse_proxy localhost:9091
+{$AUTH_DOMAIN} {
+	reverse_proxy localhost:9091 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	log {
+		output stderr
+		format console
+	}
 }
 
 # Backend domain (set by CADDY_DOMAIN env var)
@@ -20,7 +31,7 @@ http://localhost:9091 {
 	# Forward authentication to Authelia for browser routes
 	# This redirects unauthenticated users to Authelia login page
 	handle @dashboard {
-		forward_auth localhost:9091 {
+		forward_auth {$AUTH_DOMAIN} {
 			uri /api/verify?rd=https://{$CADDY_DOMAIN}/
 			copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
 		}

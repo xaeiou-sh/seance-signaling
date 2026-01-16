@@ -57,12 +57,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = () => {
     // Redirect to Authelia login page
     // Authelia will redirect back after successful login
-    window.location.href = `http://localhost:9091/?rd=${encodeURIComponent(window.location.href)}`;
+    // Use AUTH_DOMAIN from environment (auth.localhost in dev, auth.seance.dev in prod)
+    const authDomain = import.meta.env.VITE_AUTH_DOMAIN || 'auth.localhost';
+    window.location.href = `https://${authDomain}/?rd=${encodeURIComponent(window.location.href)}`;
   };
 
   const logout = () => {
     // Redirect to Authelia logout endpoint
-    window.location.href = `http://localhost:9091/logout?rd=${encodeURIComponent(window.location.origin)}`;
+    const authDomain = import.meta.env.VITE_AUTH_DOMAIN || 'auth.localhost';
+    window.location.href = `https://${authDomain}/logout?rd=${encodeURIComponent(window.location.origin)}`;
   };
 
   const refetchUser = () => {

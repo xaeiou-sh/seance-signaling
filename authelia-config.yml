@@ -1,23 +1,30 @@
 ---
-# Authelia Configuration for Seance
+# Authelia Configuration for Seance - Templated for dev/prod
 # https://www.authelia.com/configuration/prologue/introduction/
+# Enable templating: X_AUTHELIA_CONFIG_FILTERS=template
+
+theme: light
 
 server:
-  host: 0.0.0.0
-  port: 9091
+  address: 'tcp://0.0.0.0:9091'
 
 log:
-  level: info
+  level: debug
   format: text
 
 # Session configuration - stored in Redis/Valkey
 session:
+  secret: 'insecure_dev_session_secret_change_in_production'  # TODO: Use secrets management in prod
   name: seance_session
-  domain: localhost  # Will be overridden in production
   same_site: lax
   expiration: 1h
   inactivity: 15m
-  remember_me_duration: 1M
+  remember_me: 1M
+
+  cookies:
+    - domain: '{{ env "AUTH_DOMAIN" | trimPrefix "auth." }}'  # localhost or seance.dev
+      authelia_url: 'https://{{ env "AUTH_DOMAIN" }}'
+      default_redirection_url: 'https://{{ env "CADDY_DOMAIN" }}'
 
   redis:
     host: localhost
@@ -25,6 +32,7 @@ session:
 
 # Storage backend for user settings, TOTP secrets, etc.
 storage:
+  encryption_key: 'insecure_dev_encryption_key_must_be_at_least_20_chars'
   local:
     path: /tmp/authelia/db.sqlite3
 
@@ -45,24 +53,22 @@ authentication_backend:
 
 # Access control rules
 access_control:
-  default_policy: deny
+  default_policy: bypass  # Allow all by default, Express handles authorization
 
   rules:
-    # Allow all users to access public marketing pages
-    - domain: localhost
-      policy: bypass
-      resources:
-        - "^/$"
-        - "^/download$"
-        - "^/test-trpc$"
-
-    # Require authentication for dashboard and protected endpoints
-    - domain: localhost
+    # Require authentication for dashboard (browser route)
+    - domain:
+        - '{{ env "CADDY_DOMAIN" }}'
+        - '{{ env "APP_DOMAIN" }}'
+        - '{{ env "MARKETING_DOMAIN" }}'
       policy: one_factor
       resources:
         - "^/dashboard.*"
-        - "^/api/downloads/.*"
-        - "^/updates/darwin-arm64/download-latest$"
+
+# Identity validation for password resets and 2FA setup
+identity_validation:
+  reset_password:
+    jwt_secret: 'insecure_dev_jwt_secret_change_in_production_must_be_long'
 
 # Notifier configuration - for now, just use file-based (no email)
 # In production, configure SMTP for password resets

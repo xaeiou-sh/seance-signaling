@@ -1,20 +1,16 @@
 ---
 # Authelia Users Database
-# Passwords must be hashed using Authelia's CLI:
-# authelia crypto hash generate argon2 --password 'yourpassword'
+# To add a user:
+# 1. Run: authelia-hash 'yourpassword'
+# 2. Copy the hash (everything after "Digest: ")
+# 3. Paste it in the password field below
+# 4. Restart devenv
 
 users:
-  # Example user - password is "password123"
-  # Generate new hash: authelia crypto hash generate argon2 --password 'yourpassword'
-  admin:
-    displayname: "Admin User"
-    password: "$argon2id$v=19$m=65536,t=3,p=4$YourHashHere"
-    email: admin@seance.dev
+  # Example: Uncomment and replace hash with your own
+  testuser:
+    displayname: "Test User"
+    password: "$argon2id$v=19$m=65536,t=3,p=4$REPLACE_WITH_HASH_FROM_authelia-hash"
+    email: test@seance.dev
     groups:
-      - admins
       - users
-
-# To add a new user:
-# 1. Run: authelia crypto hash generate argon2 --password 'newpassword'
-# 2. Copy the hash and add user below
-# 3. Restart Authelia
