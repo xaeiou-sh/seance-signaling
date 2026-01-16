@@ -5,8 +5,29 @@
 	admin off
 }
 
+# Authelia authentication server
+http://localhost:9091 {
+	reverse_proxy localhost:9091
+}
+
 # Backend domain (set by CADDY_DOMAIN env var)
 {$CADDY_DOMAIN} {
+	# Define browser routes that require authentication (redirects to Authelia login)
+	@dashboard {
+		path /dashboard*
+	}
+
+	# Forward authentication to Authelia for browser routes
+	# This redirects unauthenticated users to Authelia login page
+	handle @dashboard {
+		forward_auth localhost:9091 {
+			uri /api/verify?rd=https://{$CADDY_DOMAIN}/
+			copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+		}
+	}
+
+	# API routes (/api/*, /trpc/*) do NOT use forward_auth
+	# Express validates sessions directly via cookies for fine-grained control
 	# PostHog reverse proxy - routes analytics through our domain to bypass ad blockers
 	# Enable CORS for all domains to avoid debugging issues
 	@beholder_static {

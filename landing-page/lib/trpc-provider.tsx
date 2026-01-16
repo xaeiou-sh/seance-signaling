@@ -3,19 +3,9 @@ import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import { trpc } from './trpc';
-import { useAuth } from './auth-context';
-
-// Get API URL from environment or default to localhost
-const getApiUrl = () => {
-  if (import.meta.env.PROD) {
-    return 'https://backend.seance.dev/trpc';
-  }
-  return 'http://localhost:8080/trpc';
-};
+import { ENV } from '@/env.public';
 
 function TRPCProviderInner({ children }: { children: React.ReactNode }) {
-  const { token } = useAuth();
-
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: {
@@ -31,7 +21,8 @@ function TRPCProviderInner({ children }: { children: React.ReactNode }) {
         httpBatchLink({
           url: getApiUrl(),
           headers() {
-            // Include JWT token in Authorization header if available
+            // Dynamically get token from localStorage on each request
+            const token = localStorage.getItem('seance_auth_token');
             if (token) {
               return {
                 Authorization: `Bearer ${token}`,

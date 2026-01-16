@@ -16,12 +16,15 @@
   env.MARKETING_DOMAIN = "http://localhost:8082";
   env.VITE_DEV_PORT = "5173";
   env.DEV_MODE = "true";
+  env.VITE_BACKEND_URL = "http://localhost:3000";
 
   # Production profile (just changes the domains, everything else is the same)
   profiles.prod.module = {
     env.CADDY_DOMAIN = "backend.seance.dev";
     env.APP_DOMAIN = "app.seance.dev";
     env.MARKETING_DOMAIN = "seance.dev";
+    env.DEV_MODE = "false";
+    env.VITE_BACKEND_URL = "https://backend.seance.dev";
   };
 
   # https://devenv.sh/packages/
@@ -45,23 +48,35 @@
       -e PORT=4444 \
       funnyzak/y-webrtc-signaling:latest
   '';
+  processes.
 
-  processes.caddy.exec = ''
-    cd ${config.env.DEVENV_ROOT}
-    ${lib.getExe pkgs.caddy} run --config ./Caddyfile --adapter caddyfile
-  '';
+  processes.caddy = {
+    cwd = ".";
+    exec = ''${lib.getExe pkgs.caddy} run --config ./Caddyfile --adapter caddyfile'';
+  };
 
-  processes.backend.exec = ''
-    cd ${config.env.DEVENV_ROOT}/backend-fastify
-    npm install
-    npm run dev
-  '';
-
-  processes.landing-page.exec = ''
-    cd ${config.env.DEVENV_ROOT}/landing-page
-    npm install
-    npm run dev -- --port ${config.env.VITE_DEV_PORT} --host 0.0.0.0
-  '';
+  processes.backend = {
+    cwd = "./backend-trpc";
+    exec = ''
+      npm install
+      npm run dev
+    '';
+  };
+  processes.landing-page = {
+    cwd = "./landing-page";
+    exec = ''
+      npm install
+      npm run dev -- --port ${config.env.VITE_DEV_PORT} --host 0.0.0.0
+    '';
+  };
+  processes.authelia = {
+    cwd = ".";
+    exec = ''${lib.getExe pkgs.authelia}'';
+  };
+  services.redis = {
+    enable = true;
+    package = pkgs.valkey;
+  };
 
   # https://devenv.sh/services/
   # services.postgres.enable = true;
@@ -71,20 +86,10 @@
     echo hello from $GREET
   '';
 
-  scripts.start-services.exec = ''
-    echo "Starting y-webrtc signaling server and Cloudflare Tunnel..."
-    echo "Use 'devenv up' to start all services"
-  '';
-
   scripts.cleanup-docker.exec = ''
     echo "Cleaning up any leftover Docker containers..."
     docker rm -f y-webrtc-signaling 2>/dev/null || true
     echo "Done!"
-  '';
-
-  scripts.build-landing.exec = ''
-    echo "ℹ️  Build not needed - Vite runs in production!"
-    echo "Just run 'devenv up' or 'devenv --profile prod up'"
   '';
 
   # https://devenv.sh/basics/

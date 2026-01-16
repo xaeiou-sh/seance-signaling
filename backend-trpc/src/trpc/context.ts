@@ -1,29 +1,14 @@
 // tRPC context - shared state available to all procedures
 import type { CreateExpressContextOptions } from '@trpc/server/adapters/express';
-import { extractTokenFromHeader, verifyToken } from '../auth/jwt.js';
-import { findUserById } from '../auth/users.js';
+import { validateSession } from '../auth/session.js';
 
 // Context that will be available to all tRPC procedures
-export function createContext({ req, res }: CreateExpressContextOptions) {
-  // Try to get user from JWT token
-  const authHeader = req.headers.authorization as string | undefined;
-  const token = extractTokenFromHeader(authHeader);
+export async function createContext({ req, res }: CreateExpressContextOptions) {
+  // Get Authelia session cookie
+  const sessionId = req.cookies['seance_session'];
 
-  let user: { id: string; email: string } | null = null;
-
-  if (token) {
-    const payload = verifyToken(token);
-    if (payload) {
-      // Verify user still exists
-      const dbUser = findUserById(payload.userId);
-      if (dbUser) {
-        user = {
-          id: dbUser.id,
-          email: dbUser.email,
-        };
-      }
-    }
-  }
+  // Validate session and get user info from Redis
+  const user = await validateSession(sessionId);
 
   return {
     req,

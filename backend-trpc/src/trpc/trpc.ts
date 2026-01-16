@@ -22,5 +22,24 @@ const isAuthed = t.middleware(({ ctx, next }) => {
   });
 });
 
+// Middleware to check if user is an admin
+const isAdmin = t.middleware(({ ctx, next }) => {
+  if (!ctx.user) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
+  }
+  if (!ctx.user.groups.includes('admins')) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+  }
+  return next({
+    ctx: {
+      ...ctx,
+      user: ctx.user,
+    },
+  });
+});
+
 // Protected procedure that requires authentication
 export const protectedProcedure = t.procedure.use(isAuthed);
+
+// Admin procedure that requires admin group membership
+export const adminProcedure = t.procedure.use(isAdmin);

@@ -1,0 +1,77 @@
+---
+# Authelia Configuration for Seance
+# https://www.authelia.com/configuration/prologue/introduction/
+
+server:
+  host: 0.0.0.0
+  port: 9091
+
+log:
+  level: info
+  format: text
+
+# Session configuration - stored in Redis/Valkey
+session:
+  name: seance_session
+  domain: localhost  # Will be overridden in production
+  same_site: lax
+  expiration: 1h
+  inactivity: 15m
+  remember_me_duration: 1M
+
+  redis:
+    host: localhost
+    port: 6379
+
+# Storage backend for user settings, TOTP secrets, etc.
+storage:
+  local:
+    path: /tmp/authelia/db.sqlite3
+
+# Authentication backend - file-based users for now
+# In production, consider LDAP or external OAuth
+authentication_backend:
+  file:
+    path: ./authelia-users.yml
+    password:
+      algorithm: argon2
+      argon2:
+        variant: argon2id
+        iterations: 3
+        memory: 65536
+        parallelism: 4
+        key_length: 32
+        salt_length: 16
+
+# Access control rules
+access_control:
+  default_policy: deny
+
+  rules:
+    # Allow all users to access public marketing pages
+    - domain: localhost
+      policy: bypass
+      resources:
+        - "^/$"
+        - "^/download$"
+        - "^/test-trpc$"
+
+    # Require authentication for dashboard and protected endpoints
+    - domain: localhost
+      policy: one_factor
+      resources:
+        - "^/dashboard.*"
+        - "^/api/downloads/.*"
+        - "^/updates/darwin-arm64/download-latest$"
+
+# Notifier configuration - for now, just use file-based (no email)
+# In production, configure SMTP for password resets
+notifier:
+  filesystem:
+    filename: /tmp/authelia/notifications.txt
+
+# TOTP (Time-based One-Time Password) for 2FA
+totp:
+  issuer: seance.dev
+  period: 30
+  skew: 1

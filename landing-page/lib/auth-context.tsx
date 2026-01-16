@@ -1,67 +1,83 @@
-// Authentication context and provider
+// Authentication context and provider - Authelia integration
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { trpc } from './trpc-provider';
 
 interface User {
   id: string;
   email: string;
+  groups: string[];
 }
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
-  setAuth: (token: string, user: User) => void;
-  clearAuth: () => void;
   isAuthenticated: boolean;
+  isLoading: boolean;
+  login: () => void;
+  logout: () => void;
+  refetchUser: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const TOKEN_KEY = 'seance_auth_token';
-const USER_KEY = 'seance_auth_user';
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load token and user from localStorage on mount
-  useEffect(() => {
-    const savedToken = localStorage.getItem(TOKEN_KEY);
-    const savedUser = localStorage.getItem(USER_KEY);
+  // Check authentication status by calling /auth/me
+  const checkAuth = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/me`, {
+        credentials: 'include', // Include cookies for Authelia session
+      });
 
-    if (savedToken && savedUser) {
-      try {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
-      } catch (error) {
-        console.error('Failed to parse saved user:', error);
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
+      if (response.ok) {
+        const userData = await response.json();
+        if (userData) {
+          setUser(userData);
+        } else {
+          setUser(null);
+        }
+      } else {
+        setUser(null);
       }
+    } catch (error) {
+      console.error('Failed to check authentication:', error);
+      setUser(null);
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
-
-  const setAuth = (newToken: string, newUser: User) => {
-    setToken(newToken);
-    setUser(newUser);
-    localStorage.setItem(TOKEN_KEY, newToken);
-    localStorage.setItem(USER_KEY, JSON.stringify(newUser));
   };
 
-  const clearAuth = () => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+  // Check auth on mount
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const login = () => {
+    // Redirect to Authelia login page
+    // Authelia will redirect back after successful login
+    window.location.href = `http://localhost:9091/?rd=${encodeURIComponent(window.location.href)}`;
+  };
+
+  const logout = () => {
+    // Redirect to Authelia logout endpoint
+    window.location.href = `http://localhost:9091/logout?rd=${encodeURIComponent(window.location.origin)}`;
+  };
+
+  const refetchUser = () => {
+    checkAuth();
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        token,
-        setAuth,
-        clearAuth,
-        isAuthenticated: !!token && !!user,
+        isAuthenticated: !!user,
+        isLoading,
+        login,
+        logout,
+        refetchUser,
       }}
     >
       {children}

@@ -2,6 +2,7 @@
 // Serves desktop app updates + web app
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';
@@ -13,7 +14,8 @@ import { appRouter } from './trpc/router.js';
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({ credentials: true, origin: true })); // Allow credentials for Authelia cookies
+app.use(cookieParser()); // Parse Authelia session cookies
 app.use(express.json({ limit: '500mb' })); // For large deployments
 app.use(express.urlencoded({ extended: true }));
 
