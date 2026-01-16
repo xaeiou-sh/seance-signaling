@@ -1,15 +1,10 @@
 // tRPC context - shared state available to all procedures
-import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { CreateExpressContextOptions } from '@trpc/server/adapters/express';
 import { extractTokenFromHeader, verifyToken } from '../auth/jwt.js';
 import { findUserById } from '../auth/users.js';
 
-export interface CreateContextOptions {
-  req: FastifyRequest;
-  res: FastifyReply;
-}
-
 // Context that will be available to all tRPC procedures
-export function createContext({ req, res }: CreateContextOptions) {
+export function createContext({ req, res }: CreateExpressContextOptions) {
   // Try to get user from JWT token
   const authHeader = req.headers.authorization as string | undefined;
   const token = extractTokenFromHeader(authHeader);

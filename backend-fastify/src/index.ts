@@ -1,20 +1,21 @@
 // Seance Backend Server
 // Serves desktop app updates + web app
-import Fastify from 'fastify';
-import fastifySwagger from '@fastify/swagger';
-import fastifySwaggerUI from '@fastify/swagger-ui';
-import fastifyStatic from '@fastify/static';
-import { Type } from '@sinclair/typebox';
+import express from 'express';
+import cors from 'cors';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';
+import swaggerUi from 'swagger-ui-express';
+import { generateOpenApiDocument } from 'trpc-to-openapi';
 import { registerTRPC } from './trpc/adapter.js';
 import { appRouter } from './trpc/router.js';
 
-const app = Fastify({
-  logger: true,
-  bodyLimit: 500 * 1024 * 1024, // 500 MB for large deployments
-});
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '500mb' })); // For large deployments
+app.use(express.urlencoded({ extended: true }));
 
 // Load configuration from config.yml
 function loadConfig() {
@@ -91,94 +92,12 @@ function readReleaseFile(filePath: string): Buffer | null {
   }
 }
 
-// Register Swagger/OpenAPI
-await app.register(fastifySwagger, {
-  openapi: {
-    info: {
-      title: 'Seance Backend API',
-      description: 'Backend API for Seance desktop updates and web app hosting',
-      version: '1.0.0',
-    },
-    servers: [
-      { url: 'http://localhost:3000', description: 'Local server' },
-      { url: 'https://backend.seance.dev', description: 'Production server' },
-    ],
-  },
-});
-
-await app.register(fastifySwaggerUI, {
-  routePrefix: '/ui',
-});
-
-// Register tRPC
-registerTRPC(app, {
-  router: appRouter,
-  prefix: '/trpc',
-});
-
-console.log('[tRPC] Registered at /trpc');
-
-// TypeBox schemas
-const DeployFileSchema = Type.Object({
-  path: Type.String({ examples: ['releases/darwin-arm64/Seance-1.0.0-mac.dmg'] }),
-  content: Type.String({ description: 'Base64-encoded file content' }),
-});
-
-const DeployRequestSchema = Type.Object({
-  files: Type.Array(DeployFileSchema),
-  clearWeb: Type.Optional(Type.Boolean({ description: 'Clear web directory before deployment' })),
-});
-
-const DeployResponseSchema = Type.Object({
-  success: Type.Boolean(),
-  filesDeployed: Type.Number(),
-  timestamp: Type.String({ examples: ['2026-01-11T00:00:00.000Z'] }),
-});
-
-const ErrorResponseSchema = Type.Object({
-  error: Type.String(),
-  message: Type.Optional(Type.String()),
-});
-
-const VersionResponseSchema = Type.Object({
-  web: Type.Object({
-    version: Type.String(),
-    deployed: Type.String(),
-  }),
-  desktop: Type.Object({
-    version: Type.String(),
-    released: Type.String(),
-    downloadUrl: Type.String(),
-  }),
-});
-
-const ReleasesJsonSchema = Type.Object({
-  version: Type.String({ examples: ['2026.01.000'] }),
-  releaseDate: Type.String({ examples: ['2026-01-11T00:00:00.000Z'] }),
-  url: Type.String({ examples: ['https://backend.seance.dev/updates/releases/darwin-arm64/Seance-2026.01.000-mac.dmg'] }),
-});
-
 // Deploy endpoint
-app.post('/deploy', {
-  schema: {
-    description: 'Deploy artifacts from CI/CD',
-    summary: 'Deploy artifacts from GitHub Actions',
-    headers: Type.Object({
-      'x-builder-key': Type.String({ description: 'Builder API key (SHA-256 hash stored in config.yml)' }),
-    }),
-    body: DeployRequestSchema,
-    response: {
-      200: DeployResponseSchema,
-      401: ErrorResponseSchema,
-      400: ErrorResponseSchema,
-      500: ErrorResponseSchema,
-    },
-  },
-}, async (request, reply) => {
-  const builderKey = request.headers['x-builder-key'] as string | undefined;
+app.post('/deploy', async (req, res) => {
+  const builderKey = req.headers['x-builder-key'] as string | undefined;
 
   if (!builderKey) {
-    reply.code(401).send({ error: 'Missing builder key' });
+    res.status(401).json({ error: 'Missing builder key' });
     return;
   }
 
@@ -187,15 +106,14 @@ app.post('/deploy', {
 
   if (!config.builderKeyHashes.includes(keyHash)) {
     console.error('[Deploy] Invalid builder key (hash not found)');
-    reply.code(401).send({ error: 'Invalid builder key' });
+    res.status(401).json({ error: 'Invalid builder key' });
     return;
   }
 
   console.log('[Deploy] Builder key verified successfully');
 
   try {
-    const body = request.body as { files: Array<{ path: string; content: string }>; clearWeb?: boolean };
-    const { files, clearWeb } = body;
+    const { files, clearWeb } = req.body as { files: Array<{ path: string; content: string }>; clearWeb?: boolean };
 
     console.log(`[Deploy] Deploying ${files.length} files`);
 
@@ -223,7 +141,7 @@ app.post('/deploy', {
       const normalizedPath = join(process.cwd(), file.path);
       if (!normalizedPath.startsWith(process.cwd())) {
         console.error('[Deploy] Path traversal attempt:', file.path);
-        reply.code(400).send({ error: 'Invalid file path' });
+        res.status(400).json({ error: 'Invalid file path' });
         return;
       }
 
@@ -240,14 +158,14 @@ app.post('/deploy', {
     }
 
     console.log('[Deploy] Deployment complete');
-    reply.send({
+    res.json({
       success: true,
       filesDeployed: files.length,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('[Deploy] Deployment failed:', error);
-    reply.code(500).send({
+    res.status(500).json({
       error: 'Deployment failed',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -255,41 +173,23 @@ app.post('/deploy', {
 });
 
 // Version API
-app.get('/updates/api/version.json', {
-  schema: {
-    description: 'Get version information',
-    summary: 'Returns current versions for web and desktop apps',
-    response: {
-      200: VersionResponseSchema,
-      500: ErrorResponseSchema,
-    },
-  },
-}, async (request, reply) => {
+app.get('/updates/api/version.json', (req, res) => {
   const versionData = getVersionData();
 
   if (!versionData) {
-    reply.code(500).send({ error: 'Version data not found' });
+    res.status(500).json({ error: 'Version data not found' });
     return;
   }
 
-  reply.send(versionData);
+  res.json(versionData);
 });
 
 // Serve update manifest (JSON format for electron-updater)
-app.get('/updates/darwin-arm64/RELEASES.json', {
-  schema: {
-    description: 'Get release manifest (JSON)',
-    summary: 'Returns JSON manifest for electron-updater',
-    response: {
-      200: ReleasesJsonSchema,
-      500: ErrorResponseSchema,
-    },
-  },
-}, async (request, reply) => {
+app.get('/updates/darwin-arm64/RELEASES.json', (req, res) => {
   const versionData = getVersionData();
 
   if (!versionData) {
-    reply.code(500).send({ error: 'Version data not found' });
+    res.status(500).json({ error: 'Version data not found' });
     return;
   }
 
@@ -299,82 +199,50 @@ app.get('/updates/darwin-arm64/RELEASES.json', {
     url: `https://backend.seance.dev/updates/releases/darwin-arm64/Seance-${versionData.desktop.version}-mac.dmg`
   };
 
-  reply.send(manifest);
+  res.json(manifest);
 });
 
 // Serve latest-mac.yml (YAML format for electron-updater)
-app.get('/updates/darwin-arm64/latest-mac.yml', {
-  schema: {
-    description: 'Get release manifest (YAML)',
-    summary: 'Returns YAML manifest for electron-updater',
-    response: {
-      200: Type.String({ contentMediaType: 'text/yaml' }),
-      404: Type.String(),
-    },
-  },
-}, async (request, reply) => {
+app.get('/updates/darwin-arm64/latest-mac.yml', (req, res) => {
   const manifest = readReleaseFile('darwin-arm64/latest-mac.yml');
 
   if (!manifest) {
-    reply.code(404).send('Manifest not found');
+    res.status(404).send('Manifest not found');
     return;
   }
 
-  reply.type('text/yaml').send(manifest);
+  res.type('text/yaml').send(manifest);
 });
 
 // Serve .dmg files
-app.get('/updates/releases/darwin-arm64/:filename', {
-  schema: {
-    description: 'Download specific release file',
-    summary: 'Downloads a specific version of the desktop app',
-    params: Type.Object({
-      filename: Type.String({ examples: ['Seance-2026.01.000-mac.dmg'] }),
-    }),
-    response: {
-      200: Type.String({ contentMediaType: 'application/x-apple-diskimage' }),
-      400: Type.String(),
-      404: Type.String(),
-    },
-  },
-}, async (request, reply) => {
-  const { filename } = request.params as { filename: string };
+app.get('/updates/releases/darwin-arm64/:filename', (req, res) => {
+  const { filename } = req.params;
 
   // Security: prevent path traversal
   if (filename.includes('..') || filename.includes('/')) {
-    reply.code(400).send('Invalid filename');
+    res.status(400).send('Invalid filename');
     return;
   }
 
   const fileData = readReleaseFile(`darwin-arm64/${filename}`);
 
   if (!fileData) {
-    reply.code(404).send('File not found');
+    res.status(404).send('File not found');
     return;
   }
 
-  reply
+  res
     .type('application/x-apple-diskimage')
     .header('Content-Disposition', `attachment; filename="${filename}"`)
     .send(fileData);
 });
 
 // Download latest version with proper filename
-app.get('/updates/darwin-arm64/download-latest', {
-  schema: {
-    description: 'Download latest release',
-    summary: 'Downloads the latest version of the desktop app with proper filename',
-    response: {
-      200: Type.String({ contentMediaType: 'application/x-apple-diskimage' }),
-      404: Type.String(),
-      500: ErrorResponseSchema,
-    },
-  },
-}, async (request, reply) => {
+app.get('/updates/darwin-arm64/download-latest', (req, res) => {
   const versionData = getVersionData();
 
   if (!versionData) {
-    reply.code(500).send({ error: 'Version data not found' });
+    res.status(500).json({ error: 'Version data not found' });
     return;
   }
 
@@ -383,28 +251,46 @@ app.get('/updates/darwin-arm64/download-latest', {
   const fileData = readReleaseFile(`darwin-arm64/${filename}`);
 
   if (!fileData) {
-    reply.code(404).send('File not found');
+    res.status(404).send('File not found');
     return;
   }
 
-  reply
+  res
     .type('application/x-apple-diskimage')
     .header('Content-Disposition', `attachment; filename="${filename}"`)
     .send(fileData);
 });
 
-// Serve static files from web/ directory
-await app.register(fastifyStatic, {
-  root: join(process.cwd(), 'web'),
-  prefix: '/',
-  index: ['index.html'],
+// Register tRPC
+registerTRPC(app, {
+  router: appRouter,
+  prefix: '/trpc',
 });
 
+console.log('[tRPC] Registered at /trpc');
+console.log('[OpenAPI] Registered at /api');
+
+// Generate OpenAPI document
+const openApiDocument = generateOpenApiDocument(appRouter, {
+  title: 'Seance Backend API',
+  description: 'Backend API for Seance desktop updates and web app hosting',
+  version: '1.0.0',
+  baseUrl: 'http://localhost:3000',
+});
+
+// Serve Swagger UI
+app.use('/ui', swaggerUi.serve, swaggerUi.setup(openApiDocument));
+
+console.log('[Swagger] Registered at /ui');
+
+// Serve static files from web/ directory
+app.use(express.static(join(process.cwd(), 'web')));
+
 // SPA fallback - serve index.html for client-side routing
-app.setNotFoundHandler(async (request, reply) => {
+app.get('*', (req, res) => {
   // Don't apply SPA fallback to API routes
-  if (request.url.startsWith('/updates')) {
-    reply.code(404).send('Not found');
+  if (req.url.startsWith('/updates') || req.url.startsWith('/trpc') || req.url.startsWith('/api')) {
+    res.status(404).send('Not found');
     return;
   }
 
@@ -412,27 +298,24 @@ app.setNotFoundHandler(async (request, reply) => {
   try {
     const indexPath = join(process.cwd(), 'web', 'index.html');
     if (existsSync(indexPath)) {
-      const content = readFileSync(indexPath, 'utf-8');
-      reply.type('text/html').send(content);
+      res.sendFile(indexPath);
       return;
     }
   } catch (error) {
     console.error('[Static File] Error serving index.html:', error);
   }
 
-  reply.code(404).send('Not found');
+  res.status(404).send('Not found');
 });
 
 // Start server
 const port = Number(process.env.PORT || 3000);
 
-try {
-  await app.listen({ port, host: '0.0.0.0' });
+app.listen(port, '0.0.0.0', () => {
   console.log(`🔮 Seance Update Server started on port ${port}`);
   console.log(`   Health: http://localhost:${port}/`);
   console.log(`   Updates: http://localhost:${port}/updates/`);
-  console.log(`   OpenAPI Docs: http://localhost:${port}/ui`);
-} catch (err) {
-  app.log.error(err);
-  process.exit(1);
-}
+  console.log(`   Swagger UI: http://localhost:${port}/ui`);
+  console.log(`   tRPC: http://localhost:${port}/trpc`);
+  console.log(`   REST API: http://localhost:${port}/api`);
+});

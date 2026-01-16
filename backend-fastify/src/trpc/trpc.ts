@@ -1,8 +1,9 @@
 // tRPC initialization and procedure definitions
 import { initTRPC, TRPCError } from '@trpc/server';
+import type { OpenApiMeta } from 'trpc-to-openapi';
 import type { Context } from './context';
 
-const t = initTRPC.context<Context>().create();
+const t = initTRPC.meta<OpenApiMeta>().context<Context>().create();
 
 // Base router and procedure
 export const router = t.router;
