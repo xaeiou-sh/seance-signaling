@@ -8,6 +8,8 @@ import { Type } from '@sinclair/typebox';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { createHash } from 'crypto';
+import { registerTRPC } from './trpc/adapter.js';
+import { appRouter } from './trpc/router.js';
 
 const app = Fastify({
   logger: true,
@@ -107,6 +109,14 @@ await app.register(fastifySwagger, {
 await app.register(fastifySwaggerUI, {
   routePrefix: '/ui',
 });
+
+// Register tRPC
+registerTRPC(app, {
+  router: appRouter,
+  prefix: '/trpc',
+});
+
+console.log('[tRPC] Registered at /trpc');
 
 // TypeBox schemas
 const DeployFileSchema = Type.Object({

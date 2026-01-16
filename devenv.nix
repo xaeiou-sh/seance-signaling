@@ -13,11 +13,13 @@
   env.PORT = "3000";
   env.CADDY_DOMAIN = "http://localhost:8080";
   env.APP_DOMAIN = "http://localhost:8081";
+  env.MARKETING_DOMAIN = "http://localhost:8082";
 
   # Production profile
   profiles.prod.module = {
     env.CADDY_DOMAIN = "backend.seance.dev";
     env.APP_DOMAIN = "app.seance.dev";
+    env.MARKETING_DOMAIN = "seance.dev";
   };
 
   # https://devenv.sh/packages/
@@ -48,7 +50,7 @@
   '';
 
   processes.update-server.exec = ''
-    cd ${config.env.DEVENV_ROOT}/seance-backend-hono
+    cd ${config.env.DEVENV_ROOT}/backend-fastify
     npm install
     npm run start
   '';
@@ -72,16 +74,27 @@
     echo "Done!"
   '';
 
+  scripts.build-landing.exec = ''
+    echo "🎨 Building landing page..."
+    cd ${config.env.DEVENV_ROOT}/landing-page
+    npm install
+    npm run build
+    echo "✅ Landing page built to landing-page/dist/"
+  '';
+
   # https://devenv.sh/basics/
   enterShell = ''
     echo "🔮 Seance Coordinator Development Environment"
     echo ""
     echo "Available commands:"
     echo "  devenv up           - Start all services (backend + signaling + caddy)"
+    echo "  build-landing       - Build the marketing landing page"
     echo "  cleanup-docker      - Remove leftover Docker containers"
     echo ""
     echo "🌐 Local URLs:"
+    echo "  Marketing: http://localhost:8082"
     echo "  Backend: http://localhost:8080"
+    echo "  App: http://localhost:8081"
     echo "  Swagger UI: http://localhost:8080/ui"
     echo "  Signaling: ws://localhost:4444"
   '';

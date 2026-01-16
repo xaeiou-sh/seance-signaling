@@ -12,16 +12,20 @@
   "keywords": [],
   "author": "Nicole Venner <nvenner@protonmail.ch>",
   "license": "ISC",
-  "devDependencies": {
-    "tsx": "^4.21.0",
-    "typescript": "^5.7.2"
-  },
   "dependencies": {
     "@fastify/static": "^8.0.2",
     "@fastify/swagger": "^9.3.0",
     "@fastify/swagger-ui": "^5.2.3",
     "@sinclair/typebox": "^0.34.21",
+    "@trpc/server": "^11.0.0",
     "@types/node": "^25.0.6",
-    "fastify": "^5.2.1"
+    "fastify": "^5.2.1",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.7",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.2"
   }
 }

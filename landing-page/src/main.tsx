@@ -2,6 +2,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import { PostHogProvider } from "posthog-js/react";
+import { AuthProvider } from "@/lib/auth-context";
+import { TRPCProvider } from "@/lib/trpc-provider";
 import { ENV } from "@/env.public";
 import "./globals.css";
 
@@ -16,7 +18,11 @@ createRoot(document.getElementById("root")!).render(
         debug: import.meta.env.MODE === "development",
       }}
     >
-      <App />
+      <AuthProvider>
+        <TRPCProvider>
+          <App />
+        </TRPCProvider>
+      </AuthProvider>
     </PostHogProvider>
   </StrictMode>
 );

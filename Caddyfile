@@ -84,38 +84,14 @@
 		path /signaling*
 	}
 	handle @signaling {
-		header Access-Control-Allow-Origin "*"
-		header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-		header Access-Control-Allow-Headers "Content-Type, Authorization"
-
-		@options {
-			method OPTIONS
-		}
-		handle @options {
-			respond 204
-		}
-
-		handle {
-			reverse_proxy localhost:4444 {
-				header_up Host {host}
-				header_up X-Real-IP {remote_host}
-			}
+		reverse_proxy localhost:4444 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
 		}
 	}
 
 	# Default: backend API/update server
 	handle {
-		header Access-Control-Allow-Origin "*"
-		header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-		header Access-Control-Allow-Headers "Content-Type, Authorization"
-
-		@options {
-			method OPTIONS
-		}
-		handle @options {
-			respond 204
-		}
-
 		reverse_proxy localhost:3000 {
 			header_up Host {host}
 			header_up X-Real-IP {remote_host}
@@ -130,23 +106,32 @@
 
 # App domain (set by APP_DOMAIN env var)
 {$APP_DOMAIN} {
-	header Access-Control-Allow-Origin "*"
-	header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-	header Access-Control-Allow-Headers "Content-Type, Authorization"
-
-	@options {
-		method OPTIONS
-	}
-	handle @options {
-		respond 204
-	}
-
 	reverse_proxy localhost:3000 {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Forwarded-Proto {scheme}
 	}
+
+	log {
+		output stderr
+		format console
+	}
+}
+
+# Marketing site (set by MARKETING_DOMAIN env var)
+{$MARKETING_DOMAIN} {
+	# Serve static files from landing-page/dist
+	root * {$DEVENV_ROOT}/landing-page/dist
+
+	# Try files first, then serve index.html for SPA routing
+	try_files {path} /index.html
+
+	# Enable file serving
+	file_server
+
+	# Compression for better performance
+	encode gzip
 
 	log {
 		output stderr
