@@ -121,16 +121,19 @@
 
 # Marketing site (set by MARKETING_DOMAIN env var)
 {$MARKETING_DOMAIN} {
-	# Serve static files from landing-page/dist
-	root * {$DEVENV_ROOT}/landing-page/dist
+	# In dev mode: proxy to Vite dev server for hot reload
+	# In prod mode: build first with `build-landing`, then this will serve static files
 
-	# Try files first, then serve index.html for SPA routing
-	try_files {path} /index.html
+	# For dev: proxy to Vite dev server on port 5173
+	reverse_proxy localhost:{$VITE_DEV_PORT:5173} {
+		# Send proper headers for Vite HMR
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
 
-	# Enable file serving
-	file_server
-
-	# Compression for better performance
+	# Compression
 	encode gzip
 
 	log {

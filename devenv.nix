@@ -14,8 +14,10 @@
   env.CADDY_DOMAIN = "http://localhost:8080";
   env.APP_DOMAIN = "http://localhost:8081";
   env.MARKETING_DOMAIN = "http://localhost:8082";
+  env.VITE_DEV_PORT = "5173";
+  env.DEV_MODE = "true";
 
-  # Production profile
+  # Production profile (just changes the domains, everything else is the same)
   profiles.prod.module = {
     env.CADDY_DOMAIN = "backend.seance.dev";
     env.APP_DOMAIN = "app.seance.dev";
@@ -49,10 +51,16 @@
     ${lib.getExe pkgs.caddy} run --config ./Caddyfile --adapter caddyfile
   '';
 
-  processes.update-server.exec = ''
+  processes.backend.exec = ''
     cd ${config.env.DEVENV_ROOT}/backend-fastify
     npm install
-    npm run start
+    npm run dev
+  '';
+
+  processes.landing-page.exec = ''
+    cd ${config.env.DEVENV_ROOT}/landing-page
+    npm install
+    npm run dev -- --port ${config.env.VITE_DEV_PORT} --host 0.0.0.0
   '';
 
   # https://devenv.sh/services/
@@ -75,28 +83,27 @@
   '';
 
   scripts.build-landing.exec = ''
-    echo "🎨 Building landing page..."
-    cd ${config.env.DEVENV_ROOT}/landing-page
-    npm install
-    npm run build
-    echo "✅ Landing page built to landing-page/dist/"
+    echo "ℹ️  Build not needed - Vite runs in production!"
+    echo "Just run 'devenv up' or 'devenv --profile prod up'"
   '';
 
   # https://devenv.sh/basics/
   enterShell = ''
-    echo "🔮 Seance Coordinator Development Environment"
+    echo "🔮 Seance Development Environment"
     echo ""
     echo "Available commands:"
-    echo "  devenv up           - Start all services (backend + signaling + caddy)"
-    echo "  build-landing       - Build the marketing landing page"
-    echo "  cleanup-docker      - Remove leftover Docker containers"
+    echo "  devenv up                  - Start all services (local dev)"
+    echo "  devenv --profile prod up   - Start all services (production domains)"
+    echo "  cleanup-docker             - Remove leftover Docker containers"
     echo ""
     echo "🌐 Local URLs:"
-    echo "  Marketing: http://localhost:8082"
-    echo "  Backend: http://localhost:8080"
+    echo "  Marketing: http://localhost:8082  (Vite with hot reload)"
+    echo "  Backend: http://localhost:8080  (tsx watch with hot reload)"
     echo "  App: http://localhost:8081"
     echo "  Swagger UI: http://localhost:8080/ui"
     echo "  Signaling: ws://localhost:4444"
+    echo ""
+    echo "💡 Same setup for dev and production - just different domains!"
   '';
 
   # https://devenv.sh/tasks/
