@@ -10,8 +10,84 @@ import swaggerUi from 'swagger-ui-express';
 import { generateOpenApiDocument } from 'trpc-to-openapi';
 import { registerTRPC } from './trpc/adapter.js';
 import { appRouter } from './trpc/router.js';
+import Stripe from 'stripe';
+import { storeSubscription, deleteSubscription } from './stripe/subscription-storage.js';
 
 const app = express();
+
+// Stripe webhook needs raw body for signature verification
+// Must be registered BEFORE express.json() middleware
+app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+
+  if (!sig || !process.env.STRIPE_WEBHOOK_SECRET || !process.env.STRIPE_SECRET_KEY) {
+    console.error('[Stripe Webhook] Missing signature or secrets');
+    res.status(400).send('Webhook configuration error');
+    return;
+  }
+
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: '2024-12-18.acacia',
+  });
+
+  try {
+    // Verify webhook signature
+    const event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+
+    console.log(`[Stripe Webhook] Received event: ${event.type}`);
+
+    // Handle subscription events
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        console.log(`[Stripe Webhook] Checkout completed for ${session.customer_email}`);
+        break;
+      }
+
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customer = await stripe.customers.retrieve(subscription.customer as string) as Stripe.Customer;
+
+        if (customer.email) {
+          await storeSubscription(customer.email, {
+            customerId: subscription.customer as string,
+            subscriptionId: subscription.id,
+            status: subscription.status as any,
+            currentPeriodEnd: subscription.current_period_end,
+            cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          });
+
+          console.log(`[Stripe Webhook] Subscription ${subscription.status} for ${customer.email}`);
+        }
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customer = await stripe.customers.retrieve(subscription.customer as string) as Stripe.Customer;
+
+        if (customer.email) {
+          await deleteSubscription(customer.email);
+          console.log(`[Stripe Webhook] Subscription deleted for ${customer.email}`);
+        }
+        break;
+      }
+
+      default:
+        console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('[Stripe Webhook] Error:', error);
+    res.status(400).send(`Webhook Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+});
 
 // Middleware
 app.use(cors({ credentials: true, origin: true })); // Allow credentials for Authelia cookies

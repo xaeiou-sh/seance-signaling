@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Download as DownloadIcon } from "lucide-react";
 import { FaApple, FaLinux, FaWindows } from "react-icons/fa";
 import { posthog } from "@/lib/posthog";
+import { SubscriptionSection } from "@/components/SubscriptionSection";
 
 type OS = "mac" | "linux" | "windows" | "unknown";
 
@@ -142,6 +143,9 @@ export default function Download() {
                 </div>
               </>
             )}
+
+            {/* Subscription Section */}
+            <SubscriptionSection />
           </div>
         </div>
       </section>

@@ -124,7 +124,7 @@
 
 	# Default: backend API/update server
 	handle {
-		reverse_proxy localhost:3000 {
+		reverse_proxy localhost:{$PORT} {
 			header_up Host {host}
 			header_up X-Real-IP {remote_host}
 		}
@@ -138,7 +138,7 @@
 
 # App domain (set by APP_DOMAIN env var)
 {$APP_DOMAIN} {
-	reverse_proxy localhost:3000 {
+	reverse_proxy localhost:{$PORT} {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-For {remote_host}
@@ -156,8 +156,8 @@
 	# In dev mode: proxy to Vite dev server for hot reload
 	# In prod mode: build first with `build-landing`, then this will serve static files
 
-	# For dev: proxy to Vite dev server on port 5173
-	reverse_proxy localhost:{$VITE_DEV_PORT:5173} {
+	# For dev: proxy to Vite dev server
+	reverse_proxy localhost:{$VITE_DEV_PORT} {
 		# Send proper headers for Vite HMR
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}

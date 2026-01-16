@@ -19,15 +19,10 @@ function TRPCProviderInner({ children }: { children: React.ReactNode }) {
     trpc.createClient({
       links: [
         httpBatchLink({
-          url: getApiUrl(),
+          url: `${ENV.BACKEND_URL}/trpc`,
+          credentials: 'include',  // Include cookies for Authelia session
           headers() {
-            // Dynamically get token from localStorage on each request
-            const token = localStorage.getItem('seance_auth_token');
-            if (token) {
-              return {
-                Authorization: `Bearer ${token}`,
-              };
-            }
+            // No longer need JWT token - Authelia uses session cookies
             return {};
           },
         }),

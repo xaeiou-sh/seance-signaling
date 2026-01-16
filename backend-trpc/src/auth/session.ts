@@ -1,44 +1,46 @@
-// Authelia session validation via Redis
-import Redis from 'ioredis';
-
-const redis = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-});
-
+// Authelia session validation via /api/verify endpoint
 export interface AutheliaUser {
   id: string;
   email: string;
   groups: string[];
 }
 
+const AUTHELIA_URL = process.env.AUTHELIA_URL || 'http://localhost:9091';
+
 /**
- * Validate Authelia session from Redis and return user info
- * Authelia stores sessions in Redis with the session ID as the key
+ * Validate Authelia session by calling /api/verify endpoint
+ * Authelia sessions are encrypted in Redis, so we need to use the verification endpoint
  */
-export async function validateSession(sessionId: string | undefined): Promise<AutheliaUser | null> {
-  if (!sessionId) {
+export async function validateSession(sessionCookie: string | undefined): Promise<AutheliaUser | null> {
+  if (!sessionCookie) {
     return null;
   }
 
   try {
-    // Authelia stores sessions with this key format
-    const sessionKey = `seance_session:${sessionId}`;
-    const sessionData = await redis.get(sessionKey);
+    // Call Authelia's verification endpoint with the session cookie
+    const response = await fetch(`${AUTHELIA_URL}/api/verify`, {
+      method: 'GET',
+      headers: {
+        'Cookie': `seance_session=${sessionCookie}`,
+        'X-Original-URL': 'https://backend.dev.localhost/api/auth/me',
+      },
+    });
 
-    if (!sessionData) {
+    if (response.status !== 200) {
       return null;
     }
 
-    // Parse Authelia session data
-    const session = JSON.parse(sessionData);
+    // Authelia returns user info in headers
+    const username = response.headers.get('Remote-User');
+    const email = response.headers.get('Remote-Email');
+    const groupsHeader = response.headers.get('Remote-Groups');
+    const groups = groupsHeader ? groupsHeader.split(',').map(g => g.trim()) : [];
 
-    // Authelia session structure contains user info
-    if (session.username && session.emails && session.emails.length > 0) {
+    if (username && email) {
       return {
-        id: session.username,
-        email: session.emails[0],
-        groups: session.groups || [],
+        id: username,
+        email: email,
+        groups: groups,
       };
     }
 
@@ -47,11 +49,4 @@ export async function validateSession(sessionId: string | undefined): Promise<Au
     console.error('Session validation error:', error);
     return null;
   }
-}
-
-/**
- * Close Redis connection (call on server shutdown)
- */
-export function closeRedis() {
-  redis.disconnect();
 }

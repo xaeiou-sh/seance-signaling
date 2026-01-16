@@ -2,6 +2,7 @@
 .devenv*
 devenv.local.nix
 devenv.local.yaml
+.state/
 
 # direnv
 .direnv

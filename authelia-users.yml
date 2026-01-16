@@ -7,10 +7,12 @@
 # 4. Restart devenv
 
 users:
-  # Example: Uncomment and replace hash with your own
-  testuser:
-    displayname: "Test User"
-    password: "$argon2id$v=19$m=65536,t=3,p=4$REPLACE_WITH_HASH_FROM_authelia-hash"
-    email: test@seance.dev
+  admin:
+    displayname: "Admin User"
+    password: "$argon2id$v=19$m=65536,t=3,p=4$ziATVscFTo6nLRSJSoyaKQ$9FCCO1ar7Cjdp4L9B5XAva/uIIWQYQ6rgC30Zp6GENg"
+    email: admin@example.org
     groups:
       - users
+
+  # To add a user, run: authelia-hash 'yourpassword'
+  # Then uncomment and add here with the generated hash

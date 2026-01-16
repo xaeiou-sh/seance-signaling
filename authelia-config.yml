@@ -3,7 +3,7 @@
 # https://www.authelia.com/configuration/prologue/introduction/
 # Enable templating: X_AUTHELIA_CONFIG_FILTERS=template
 
-theme: light
+theme: dark
 
 server:
   address: 'tcp://0.0.0.0:9091'
@@ -22,8 +22,8 @@ session:
   remember_me: 1M
 
   cookies:
-    - domain: '{{ env "AUTH_DOMAIN" | trimPrefix "auth." }}'  # localhost or seance.dev
-      authelia_url: 'https://{{ env "AUTH_DOMAIN" }}'
+    - domain: '{{ env "AUTH_DOMAIN" | trimPrefix "auth." }}'  # dev.localhost or seance.dev
+      authelia_url: 'https://{{ env "AUTH_DOMAIN" }}'  # auth.dev.localhost or auth.seance.dev
       default_redirection_url: 'https://{{ env "CADDY_DOMAIN" }}'
 
   redis:

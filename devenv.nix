@@ -11,15 +11,16 @@
 
   # Default environment (local development)
   # Uses .localhost domains with automatic HTTPS via Caddy
-  env.PORT = "3000";
-  env.CADDY_DOMAIN = "backend.localhost";
-  env.APP_DOMAIN = "app.localhost";
-  env.MARKETING_DOMAIN = "frontend.localhost";
-  env.AUTH_DOMAIN = "auth.localhost";
-  env.VITE_DEV_PORT = "5173";
+  # Backend and frontend use random high ports to avoid conflicts
+  env.PORT = "8765";  # Backend Express server
+  env.VITE_DEV_PORT = "5928";  # Vite dev server
+  env.CADDY_DOMAIN = "backend.dev.localhost";
+  env.APP_DOMAIN = "app.dev.localhost";
+  env.MARKETING_DOMAIN = "dev.localhost";
+  env.AUTH_DOMAIN = "auth.dev.localhost";
   env.DEV_MODE = "true";
-  env.VITE_BACKEND_URL = "https://backend.localhost";
-  env.VITE_AUTH_DOMAIN = "auth.localhost";
+  env.VITE_BACKEND_URL = "https://backend.dev.localhost";
+  env.VITE_AUTH_DOMAIN = "auth.dev.localhost";
 
   # Production profile (just changes the domains, everything else is the same)
   profiles.prod.module = {
@@ -81,9 +82,19 @@
       ${lib.getExe pkgs.authelia} --config ./authelia-config.yml
     '';
   };
-  services.redis = {
-    enable = true;
-    package = pkgs.valkey;
+  # Valkey (Redis fork) for session storage
+  # Run as a process instead of service for better control over data location
+  processes.valkey = {
+    exec = ''
+      mkdir -p .state/valkey
+      cat > .state/valkey/valkey.conf <<EOF
+dir .state/valkey
+bind 127.0.0.1
+port 6379
+save ""
+EOF
+      ${pkgs.valkey}/bin/valkey-server .state/valkey/valkey.conf
+    '';
   };
 
   # https://devenv.sh/services/
@@ -107,6 +118,31 @@
       exit 1
     fi
     ${lib.getExe pkgs.authelia} crypto hash generate argon2 --password "$1"
+  '';
+
+  scripts.clear-data.exec = ''
+    echo "🧹 Clearing all application data..."
+    echo ""
+
+    # Clear Authelia data (SQLite database, notifications)
+    if [ -d /tmp/authelia ]; then
+      rm -rf /tmp/authelia
+      echo "✓ Cleared /tmp/authelia directory"
+    else
+      echo "✓ /tmp/authelia already clean"
+    fi
+
+    # Clear Valkey data directory (session storage)
+    if [ -d .state/valkey ]; then
+      rm -rf .state/valkey
+      echo "✓ Cleared Valkey data directory"
+    else
+      echo "✓ Valkey data directory already clean"
+    fi
+
+    echo ""
+    echo "✅ All application data cleared!"
+    echo "Restart devenv to start fresh."
   '';
 
   scripts.trust-caddy-ca.exec = ''
@@ -144,14 +180,15 @@
     echo "  devenv --profile prod up   - Start all services (production domains)"
     echo "  cleanup-docker             - Remove leftover Docker containers"
     echo "  authelia-hash <password>   - Generate password hash for authelia-users.yml"
+    echo "  clear-data                 - Clear all application data (Authelia, Redis sessions)"
     echo ""
     echo "🌐 Local URLs (HTTPS via Caddy):"
-    echo "  Marketing: https://frontend.localhost  (Vite with hot reload)"
-    echo "  Backend: https://backend.localhost  (tsx watch with hot reload)"
-    echo "  App: https://app.localhost"
-    echo "  Swagger UI: https://backend.localhost/ui"
-    echo "  Authelia: https://auth.localhost  (Auth server)"
-    echo "  Signaling: wss://backend.localhost/signaling"
+    echo "  Marketing: https://dev.localhost  (Vite with hot reload)"
+    echo "  Backend: https://backend.dev.localhost  (tsx watch with hot reload)"
+    echo "  App: https://app.dev.localhost"
+    echo "  Swagger UI: https://backend.dev.localhost/ui"
+    echo "  Authelia: https://auth.dev.localhost  (Auth server)"
+    echo "  Signaling: wss://backend.dev.localhost/signaling"
     echo ""
     echo "💡 Same setup for dev and production - just different domains!"
     echo ""
