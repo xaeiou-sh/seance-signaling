@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Navigation } from "@/components/navigation";
 import { HeroBackground } from "@/components/HeroBackground";
 import { CursorOverlay } from "@/components/CursorOverlay";
@@ -6,11 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Download as DownloadIcon } from "lucide-react";
 import { FaApple, FaLinux, FaWindows } from "react-icons/fa";
 import { posthog } from "@/lib/posthog";
-import { SubscriptionSection } from "@/components/SubscriptionSection";
+import { useAuth } from "@/lib/auth-context";
+import { trpc } from "@/lib/trpc";
 
 type OS = "mac" | "linux" | "windows" | "unknown";
-
-const DOWNLOAD_URL = "https://backend.seance.dev/updates/darwin-arm64/download-latest";
 
 const detectOS = (): OS => {
   const userAgent = window.navigator.userAgent.toLowerCase();
@@ -29,31 +29,80 @@ const detectOS = (): OS => {
 };
 
 export default function Download() {
+  const navigate = useNavigate();
+  const { isAuthenticated, isLoading } = useAuth();
   const [os, setOs] = useState<OS>("unknown");
   const [downloading, setDownloading] = useState(false);
+
+  const subscriptionQuery = trpc.stripe.getSubscriptionStatus.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+
+  const downloadQuery = trpc.downloads.getProtectedDownload.useQuery(undefined, {
+    enabled: isAuthenticated && subscriptionQuery.data?.hasSubscription === true,
+  });
+
+  // Redirect to checkout if not authenticated or no active subscription
+  useEffect(() => {
+    // Wait for auth to finish loading
+    if (isLoading) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      posthog.capture('download_auth_required');
+      navigate('/login');
+      return;
+    }
+
+    if (subscriptionQuery.data &&
+        !subscriptionQuery.data.hasSubscription) {
+      posthog.capture('download_subscription_required');
+      navigate('/checkout');
+      return;
+    }
+
+    if (subscriptionQuery.data?.hasSubscription &&
+        subscriptionQuery.data.status !== 'active' &&
+        subscriptionQuery.data.status !== 'trialing') {
+      posthog.capture('download_subscription_inactive', { status: subscriptionQuery.data.status });
+      navigate('/checkout');
+      return;
+    }
+  }, [isAuthenticated, isLoading, subscriptionQuery.data, navigate]);
 
   useEffect(() => {
     const detectedOS = detectOS();
     setOs(detectedOS);
 
-    // Auto-download for Mac users
-    if (detectedOS === "mac") {
+    // Auto-download for Mac users (only if subscribed and download URL is ready)
+    if (detectedOS === "mac" &&
+        subscriptionQuery.data?.hasSubscription &&
+        (subscriptionQuery.data.status === 'active' || subscriptionQuery.data.status === 'trialing') &&
+        downloadQuery.data?.downloadUrl) {
       posthog.capture('download_started', {
         method: 'auto',
         os: 'mac',
+        version: downloadQuery.data.version,
       });
       setDownloading(true);
-      window.location.href = DOWNLOAD_URL;
+      window.location.href = downloadQuery.data.downloadUrl;
     }
-  }, []);
+  }, [subscriptionQuery.data, downloadQuery.data]);
 
   const handleManualDownload = () => {
+    if (!downloadQuery.data?.downloadUrl) {
+      console.error('Download URL not available');
+      return;
+    }
+
     posthog.capture('download_started', {
       method: 'manual',
       os: 'mac',
+      version: downloadQuery.data.version,
     });
     setDownloading(true);
-    window.location.href = DOWNLOAD_URL;
+    window.location.href = downloadQuery.data.downloadUrl;
   };
 
   const handleWebAppClick = () => {
@@ -143,9 +192,6 @@ export default function Download() {
                 </div>
               </>
             )}
-
-            {/* Subscription Section */}
-            <SubscriptionSection />
           </div>
         </div>
       </section>

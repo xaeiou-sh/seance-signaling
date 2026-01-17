@@ -1,11 +1,13 @@
+import { useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Heart, Settings } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { trpc } from "@/lib/trpc-provider";
+import { trpc } from "@/lib/trpc";
 import { posthog } from "@/lib/posthog";
 
 export const SubscriptionSection = () => {
-  const { isAuthenticated, login } = useAuth();
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
 
   const subscriptionQuery = trpc.stripe.getSubscriptionStatus.useQuery(undefined, {
     enabled: isAuthenticated,
@@ -36,7 +38,7 @@ export const SubscriptionSection = () => {
   const handleSupportClick = () => {
     if (!isAuthenticated) {
       posthog.capture('subscription_sign_in_clicked');
-      login();
+      navigate('/login');
       return;
     }
 

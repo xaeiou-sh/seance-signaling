@@ -1,8 +1,10 @@
-// Downloads router - will protect these endpoints with auth + Stripe checks
+// Downloads router - Protected endpoints requiring active subscription
 import { z } from 'zod';
-import { router, publicProcedure } from '../trpc';
+import { TRPCError } from '@trpc/server';
+import { router, publicProcedure, protectedProcedure } from '../trpc';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { hasActiveSubscription } from '../../stripe/subscription-storage.js';
 
 // Helper to read version.json
 function getVersionData() {
@@ -45,22 +47,45 @@ export const downloadsRouter = router({
       };
     }),
 
-  // Check if user can download (will add auth + Stripe subscription check later)
-  canDownload: publicProcedure
-    .meta({ openapi: { method: 'GET', path: '/downloads/can-download' } })
+  // Get protected download URL (requires active subscription)
+  getProtectedDownload: protectedProcedure
+    .meta({ openapi: { method: 'GET', path: '/downloads/protected' } })
     .input(z.void())
     .output(
       z.object({
-        canDownload: z.boolean(),
-        reason: z.string().nullable(),
+        version: z.string(),
+        released: z.string(),
+        downloadUrl: z.string(),
       })
     )
-    .query(() => {
-      // For now, everyone can download
-      // TODO: Check if user has active subscription
+    .query(async ({ ctx }) => {
+      if (!ctx.user) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Authentication required' });
+      }
+
+      // Check if user has active subscription
+      const hasSubscription = await hasActiveSubscription(ctx.user.email);
+
+      if (!hasSubscription) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Active subscription required to download prebuilt binaries',
+        });
+      }
+
+      const versionData = getVersionData();
+
+      if (!versionData) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Version data not found',
+        });
+      }
+
       return {
-        canDownload: true,
-        reason: null,
+        version: versionData.desktop.version,
+        released: versionData.desktop.released,
+        downloadUrl: versionData.desktop.downloadUrl,
       };
     }),
 });

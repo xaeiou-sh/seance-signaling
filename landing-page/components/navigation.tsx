@@ -7,21 +7,7 @@ import { posthog } from "@/lib/posthog";
 import { useAuth } from "@/lib/auth-context";
 
 export const Navigation = () => {
-  const { isAuthenticated, user, login, logout } = useAuth();
-
-  const handleSignInClick = () => {
-    posthog.capture('sign_in_clicked', {
-      location: 'navigation',
-    });
-    login();
-  };
-
-  const handleGetStartedClick = () => {
-    posthog.capture('get_started_clicked', {
-      location: 'navigation',
-    });
-    login();
-  };
+  const { isAuthenticated, user, logout } = useAuth();
 
   const handleLogoutClick = () => {
     posthog.capture('logout_clicked', {
@@ -68,16 +54,19 @@ export const Navigation = () => {
           ) : (
             <>
               {/* Unauthenticated State */}
-              <Button
-                variant="ghost"
-                onClick={handleSignInClick}
-                className="hidden lg:inline-flex text-mist transition-colors duration-300 hover:bg-secondary hover:text-flame"
-              >
-                Sign In
-              </Button>
-              <Button onClick={handleGetStartedClick} className={clsx(getStartedButtonStyle)}>
-                Get Started
-              </Button>
+              <Link to="/login">
+                <Button
+                  variant="ghost"
+                  className="hidden lg:inline-flex text-mist transition-colors duration-300 hover:bg-secondary hover:text-flame"
+                >
+                  Sign In
+                </Button>
+              </Link>
+              <Link to="/signup">
+                <Button className={clsx(getStartedButtonStyle)}>
+                  Get Started
+                </Button>
+              </Link>
             </>
           )}
           <Link
