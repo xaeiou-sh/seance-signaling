@@ -12,8 +12,8 @@
   # Default environment (local development)
   # Uses .localhost domains with automatic HTTPS via Caddy
   # Backend and frontend use random high ports to avoid conflicts
-  env.PORT = "8765";  # Backend Express server
-  env.VITE_DEV_PORT = "5928";  # Vite dev server
+  env.PORT = "8765"; # Backend Express server
+  env.VITE_DEV_PORT = "5928"; # Vite dev server
   env.CADDY_DOMAIN = "backend.dev.localhost";
   env.APP_DOMAIN = "app.dev.localhost";
   env.MARKETING_DOMAIN = "dev.localhost";
@@ -52,6 +52,7 @@
     nodejs_22
     caddy
     zitadel
+    postgresql_17
     # For cloud deploys
     opentofu
     ansible
@@ -91,6 +92,9 @@
   # Zitadel OIDC authentication server
   # Native binary using PostgreSQL backend
   processes.zitadel = {
+    process-compose = {
+      depends_on.postgres.condition = "process_healthy";
+    };
     exec = ''
       mkdir -p .state/zitadel
 
@@ -121,30 +125,75 @@
   # Run as a process instead of service for better control over data location
   processes.valkey = {
     exec = ''
-      mkdir -p .state/valkey
-      cat > .state/valkey/valkey.conf <<EOF
-dir .state/valkey
-bind 127.0.0.1
-port 6379
-save ""
-EOF
-      ${pkgs.valkey}/bin/valkey-server .state/valkey/valkey.conf
+            mkdir -p .state/valkey
+            cat > .state/valkey/valkey.conf <<EOF
+      dir .state/valkey
+      bind 127.0.0.1
+      port 6379
+      save ""
+      EOF
+            ${pkgs.valkey}/bin/valkey-server .state/valkey/valkey.conf
     '';
   };
 
-  # https://devenv.sh/services/
   # PostgreSQL for Zitadel
-  services.postgres = {
-    enable = true;
-    listen_addresses = "127.0.0.1";
-    port = 5432;
-    initialDatabases = [
-      {
-        name = "zitadel";
-        user = "zitadel";
-        pass = "zitadel";
-      }
-    ];
+  # Run as a process instead of service for better control over data location
+  processes.postgres = {
+    process-compose = {
+      readiness_probe = {
+        exec.command = "${pkgs.postgresql_17}/bin/pg_isready -h 127.0.0.1 -p 5432";
+        initial_delay_seconds = 1;
+        period_seconds = 1;
+      };
+    };
+    exec = ''
+            PGDATA=.state/postgres
+            mkdir -p "$PGDATA"
+
+            # Stop any existing server
+            ${pkgs.postgresql_17}/bin/pg_ctl -D "$PGDATA" stop 2>/dev/null || true
+            rm -f "$PGDATA/postmaster.pid" 2>/dev/null || true
+
+            # Initialize database if not already done
+            if [ ! -f "$PGDATA/PG_VERSION" ]; then
+              echo "Initializing PostgreSQL database..."
+              ${pkgs.postgresql_17}/bin/initdb -D "$PGDATA" --no-locale --encoding=UTF8
+
+              # Configure PostgreSQL
+              cat >> "$PGDATA/postgresql.conf" <<EOF
+      listen_addresses = '127.0.0.1'
+      port = 5432
+      unix_socket_directories = '$PWD/$PGDATA'
+      EOF
+
+              # Allow local connections without password for dev
+              cat > "$PGDATA/pg_hba.conf" <<EOF
+      local   all   all                 trust
+      host    all   all   127.0.0.1/32  trust
+      host    all   all   ::1/128       trust
+      EOF
+            fi
+
+            # Start PostgreSQL
+            ${pkgs.postgresql_17}/bin/pg_ctl -D "$PGDATA" -l "$PGDATA/postgres.log" -o "-k $PWD/$PGDATA" start
+
+            # Wait for PostgreSQL to be ready
+            for i in $(seq 1 30); do
+              if ${pkgs.postgresql_17}/bin/pg_isready -h 127.0.0.1 -p 5432 > /dev/null 2>&1; then
+                break
+              fi
+              sleep 0.5
+            done
+
+            # Create zitadel user and database if they don't exist
+            ${pkgs.postgresql_17}/bin/psql -h 127.0.0.1 -p 5432 -d postgres -c "SELECT 1 FROM pg_roles WHERE rolname='zitadel'" | grep -q 1 || \
+              ${pkgs.postgresql_17}/bin/psql -h 127.0.0.1 -p 5432 -d postgres -c "CREATE USER zitadel WITH PASSWORD 'zitadel' SUPERUSER"
+            ${pkgs.postgresql_17}/bin/psql -h 127.0.0.1 -p 5432 -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='zitadel'" | grep -q 1 || \
+              ${pkgs.postgresql_17}/bin/psql -h 127.0.0.1 -p 5432 -d postgres -c "CREATE DATABASE zitadel OWNER zitadel"
+
+            # Keep running (tail the log)
+            tail -f "$PGDATA/postgres.log"
+    '';
   };
 
   # https://devenv.sh/scripts/
@@ -172,7 +221,7 @@ EOF
     fi
 
     # Drop and recreate Zitadel database
-    if [ -d .devenv/state/postgres ]; then
+    if [ -d .state/postgres ]; then
       echo "✓ Dropping zitadel database..."
       dropdb -h localhost -p 5432 zitadel 2>/dev/null || true
       echo "✓ Recreating zitadel database..."
@@ -183,7 +232,6 @@ EOF
     echo "✅ Zitadel data cleared!"
     echo "Restart devenv to reinitialize Zitadel."
   '';
-
 
   scripts.clear-data.exec = ''
     echo "🧹 Clearing all application data..."
@@ -203,6 +251,14 @@ EOF
       echo "✓ Cleared Valkey data directory"
     else
       echo "✓ Valkey data directory already clean"
+    fi
+
+    # Clear PostgreSQL data directory
+    if [ -d .state/postgres ]; then
+      rm -rf .state/postgres
+      echo "✓ Cleared PostgreSQL data directory"
+    else
+      echo "✓ PostgreSQL data directory already clean"
     fi
 
     echo ""
