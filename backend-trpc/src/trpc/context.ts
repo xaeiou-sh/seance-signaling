@@ -4,11 +4,22 @@ import { validateSession } from '../auth/session.js';
 
 // Context that will be available to all tRPC procedures
 export async function createContext({ req, res }: CreateExpressContextOptions) {
-  // Get Authelia session cookie
-  const sessionId = req.cookies['seance_session'];
+  // Extract access token from Authorization header or cookie
+  let accessToken: string | undefined;
 
-  // Validate session and get user info from Redis
-  const user = await validateSession(sessionId);
+  // Try Authorization header first (Bearer token)
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    accessToken = authHeader.substring(7);
+  }
+
+  // Fallback to cookie (for browser requests)
+  if (!accessToken) {
+    accessToken = req.cookies['seance_token'];
+  }
+
+  // Validate token and get user info
+  const user = await validateSession(accessToken);
 
   return {
     req,

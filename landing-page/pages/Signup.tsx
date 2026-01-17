@@ -16,10 +16,23 @@ export default function Signup() {
       return;
     }
 
-    // Otherwise, redirect to Authelia login (Authelia handles both login and signup)
+    // Otherwise, redirect to Zitadel OIDC registration flow
     const authDomain = import.meta.env.VITE_AUTH_DOMAIN || 'auth.dev.localhost';
-    const returnUrl = `${window.location.origin}/dashboard`;
-    window.location.href = `https://${authDomain}/?rd=${encodeURIComponent(returnUrl)}`;
+    const clientId = import.meta.env.VITE_ZITADEL_CLIENT_ID;
+
+    if (!clientId) {
+      console.error('VITE_ZITADEL_CLIENT_ID is not set');
+      return;
+    }
+
+    const authUrl = new URL(`https://${authDomain}/oauth/v2/authorize`);
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', `${import.meta.env.VITE_BACKEND_URL}/auth/callback`);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('scope', 'openid email profile');
+    authUrl.searchParams.set('prompt', 'create'); // Zitadel shows registration form
+
+    window.location.href = authUrl.toString();
   }, [isAuthenticated, navigate]);
 
   return (

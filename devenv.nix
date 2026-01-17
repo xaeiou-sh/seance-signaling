@@ -22,6 +22,13 @@
   env.VITE_BACKEND_URL = "https://backend.dev.localhost";
   env.VITE_AUTH_DOMAIN = "auth.dev.localhost";
 
+  # Zitadel OIDC configuration
+  env.ZITADEL_ISSUER = "https://auth.dev.localhost";
+  # These will be set after Zitadel is initialized - see zitadel-config.yaml
+  env.ZITADEL_CLIENT_ID = "placeholder-set-after-init";
+  env.ZITADEL_CLIENT_SECRET = "placeholder-set-after-init";
+  env.VITE_ZITADEL_CLIENT_ID = "placeholder-set-after-init";
+
   # Production profile (just changes the domains, everything else is the same)
   profiles.prod.module = {
     env.CADDY_DOMAIN = "backend.seance.dev";
@@ -31,6 +38,12 @@
     env.DEV_MODE = "false";
     env.VITE_BACKEND_URL = "https://backend.seance.dev";
     env.VITE_AUTH_DOMAIN = "auth.seance.dev";
+
+    # Zitadel OIDC configuration (production)
+    env.ZITADEL_ISSUER = "https://auth.seance.dev";
+    env.ZITADEL_CLIENT_ID = "placeholder-set-after-init";
+    env.ZITADEL_CLIENT_SECRET = "placeholder-set-after-init";
+    env.VITE_ZITADEL_CLIENT_ID = "placeholder-set-after-init";
   };
 
   # https://devenv.sh/packages/
@@ -38,6 +51,7 @@
     git
     nodejs_22
     caddy
+    zitadel
     # For cloud deploys
     opentofu
     ansible
@@ -74,12 +88,33 @@
       npm run dev -- --port ${config.env.VITE_DEV_PORT} --host 0.0.0.0
     '';
   };
-  processes.authelia = {
-    cwd = ".";
+  # Zitadel OIDC authentication server
+  # Native binary using PostgreSQL backend
+  processes.zitadel = {
     exec = ''
-      mkdir -p /tmp/authelia
-      export X_AUTHELIA_CONFIG_FILTERS=template
-      ${lib.getExe pkgs.authelia} --config ./authelia-config.yml
+      mkdir -p .state/zitadel
+
+      # Zitadel configuration via environment variables
+      export ZITADEL_EXTERNALDOMAIN=${config.env.AUTH_DOMAIN}
+      export ZITADEL_EXTERNALPORT=443
+      export ZITADEL_EXTERNALSECURE=true
+      export ZITADEL_TLS_ENABLED=false
+      export ZITADEL_PORT=8080
+      export ZITADEL_MASTERKEY="MasterkeyNeedsToHave32Characters"
+      export ZITADEL_DATABASE_POSTGRES_HOST=localhost
+      export ZITADEL_DATABASE_POSTGRES_PORT=5432
+      export ZITADEL_DATABASE_POSTGRES_DATABASE=zitadel
+      export ZITADEL_DATABASE_POSTGRES_USER_USERNAME=zitadel
+      export ZITADEL_DATABASE_POSTGRES_USER_PASSWORD=zitadel
+      export ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE=disable
+      export ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME=zitadel
+      export ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD=zitadel
+      export ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE=disable
+      export ZITADEL_FIRSTINSTANCE_ORG_NAME="Seance"
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME="admin"
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD="ChangeThisPassword123!"
+
+      ${lib.getExe pkgs.zitadel} start-from-init --masterkeyFromEnv
     '';
   };
   # Valkey (Redis fork) for session storage
@@ -98,7 +133,19 @@ EOF
   };
 
   # https://devenv.sh/services/
-  # services.postgres.enable = true;
+  # PostgreSQL for Zitadel
+  services.postgres = {
+    enable = true;
+    listen_addresses = "127.0.0.1";
+    port = 5432;
+    initialDatabases = [
+      {
+        name = "zitadel";
+        user = "zitadel";
+        pass = "zitadel";
+      }
+    ];
+  };
 
   # https://devenv.sh/scripts/
   scripts.hello.exec = ''
@@ -111,25 +158,43 @@ EOF
     echo "Done!"
   '';
 
-  scripts.authelia-hash.exec = ''
-    if [ -z "$1" ]; then
-      echo "Usage: authelia-hash <password>"
-      echo "Generates an Argon2 hash for use in authelia-users.yml"
-      exit 1
+  scripts.clear-zitadel.exec = ''
+    echo "🧹 Clearing Zitadel data..."
+    echo ""
+    echo "WARNING: This will delete all Zitadel users, projects, and configuration!"
+    echo "Press Ctrl+C to cancel, or Enter to continue..."
+    read
+
+    # Clear Zitadel state directory
+    if [ -d .state/zitadel ]; then
+      rm -rf .state/zitadel
+      echo "✓ Cleared Zitadel state directory"
     fi
-    ${lib.getExe pkgs.authelia} crypto hash generate argon2 --password "$1"
+
+    # Drop and recreate Zitadel database
+    if [ -d .devenv/state/postgres ]; then
+      echo "✓ Dropping zitadel database..."
+      dropdb -h localhost -p 5432 zitadel 2>/dev/null || true
+      echo "✓ Recreating zitadel database..."
+      createdb -h localhost -p 5432 -O zitadel zitadel
+    fi
+
+    echo ""
+    echo "✅ Zitadel data cleared!"
+    echo "Restart devenv to reinitialize Zitadel."
   '';
+
 
   scripts.clear-data.exec = ''
     echo "🧹 Clearing all application data..."
     echo ""
 
-    # Clear Authelia data (SQLite database, notifications)
-    if [ -d /tmp/authelia ]; then
-      rm -rf /tmp/authelia
-      echo "✓ Cleared /tmp/authelia directory"
+    # Clear Zitadel data
+    if [ -d .state/zitadel ]; then
+      rm -rf .state/zitadel
+      echo "✓ Cleared Zitadel state directory"
     else
-      echo "✓ /tmp/authelia already clean"
+      echo "✓ Zitadel state directory already clean"
     fi
 
     # Clear Valkey data directory (session storage)
@@ -179,24 +244,24 @@ EOF
     echo "  devenv up                  - Start all services (local dev)"
     echo "  devenv --profile prod up   - Start all services (production domains)"
     echo "  cleanup-docker             - Remove leftover Docker containers"
-    echo "  authelia-hash <password>   - Generate password hash for authelia-users.yml"
-    echo "  clear-data                 - Clear all application data (Authelia, Redis sessions)"
+    echo "  clear-data                 - Clear all application data (Zitadel, Redis sessions)"
+    echo "  clear-zitadel              - Clear only Zitadel data (users, projects, etc.)"
     echo ""
     echo "🌐 Local URLs (HTTPS via Caddy):"
     echo "  Marketing: https://dev.localhost  (Vite with hot reload)"
     echo "  Backend: https://backend.dev.localhost  (tsx watch with hot reload)"
     echo "  App: https://app.dev.localhost"
     echo "  Swagger UI: https://backend.dev.localhost/ui"
-    echo "  Authelia: https://auth.dev.localhost  (Auth server)"
+    echo "  Zitadel: https://auth.dev.localhost  (Auth server, admin: ChangeThisPassword123!)"
     echo "  Signaling: wss://backend.dev.localhost/signaling"
     echo ""
     echo "💡 Same setup for dev and production - just different domains!"
     echo ""
     echo "🔐 First-time setup:"
     echo "  1. Trust Caddy CA: run trust-caddy-ca"
-    echo "  2. Create user: authelia-hash 'yourpassword'"
-    echo "  3. Copy hash to authelia-users.yml"
-    echo "  4. Restart devenv"
+    echo "  2. Visit https://auth.dev.localhost and login with admin/ChangeThisPassword123!"
+    echo "  3. Create a project and OIDC application"
+    echo "  4. Copy CLIENT_ID and CLIENT_SECRET to .env or devenv.nix"
   '';
 
   # https://devenv.sh/tasks/

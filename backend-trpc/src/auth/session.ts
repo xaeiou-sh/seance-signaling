@@ -1,52 +1,79 @@
-// Authelia session validation via /api/verify endpoint
+// Zitadel OIDC token validation via JWT verification
+import { createRemoteJWKSet, jwtVerify } from 'jose';
+import type { JWTPayload } from 'jose';
+
+// Keeping same interface name for backward compatibility
 export interface AutheliaUser {
   id: string;
   email: string;
   groups: string[];
 }
 
-const AUTHELIA_URL = process.env.AUTHELIA_URL || 'http://localhost:9091';
+const ZITADEL_ISSUER = process.env.ZITADEL_ISSUER;
+
+if (!ZITADEL_ISSUER) {
+  throw new Error('ZITADEL_ISSUER environment variable is not set');
+}
+
+// JWKS endpoint for JWT verification
+const JWKS = createRemoteJWKSet(new URL(`${ZITADEL_ISSUER}/.well-known/openid-configuration`).href.replace(
+  '/.well-known/openid-configuration',
+  '/oauth/v2/keys'
+));
+
+interface ZitadelTokenPayload extends JWTPayload {
+  sub: string;
+  email?: string;
+  'urn:zitadel:iam:org:project:roles'?: Record<string, Record<string, unknown>>;
+}
 
 /**
- * Validate Authelia session by calling /api/verify endpoint
- * Authelia sessions are encrypted in Redis, so we need to use the verification endpoint
+ * Validate Zitadel access token via JWT verification
+ * Uses JWKS to verify signature without calling Zitadel (fast, local validation)
  */
-export async function validateSession(sessionCookie: string | undefined): Promise<AutheliaUser | null> {
-  if (!sessionCookie) {
+export async function validateSession(accessToken: string | undefined): Promise<AutheliaUser | null> {
+  if (!accessToken) {
     return null;
   }
 
+  if (!ZITADEL_ISSUER) {
+    throw new Error('ZITADEL_ISSUER environment variable is not set');
+  }
+
   try {
-    // Call Authelia's verification endpoint with the session cookie
-    const response = await fetch(`${AUTHELIA_URL}/api/verify`, {
-      method: 'GET',
-      headers: {
-        'Cookie': `seance_session=${sessionCookie}`,
-        'X-Original-URL': 'https://backend.dev.localhost/api/auth/me',
-      },
-    });
+    // Verify JWT signature and claims
+    const { payload } = await jwtVerify(accessToken, JWKS, {
+      issuer: ZITADEL_ISSUER,
+      // audience can be added here if needed for additional security
+    }) as { payload: ZitadelTokenPayload };
 
-    if (response.status !== 200) {
-      return null;
+    const sub = payload.sub;
+    const email = payload.email;
+
+    if (!sub) {
+      throw new Error('Token missing required "sub" claim');
     }
 
-    // Authelia returns user info in headers
-    const username = response.headers.get('Remote-User');
-    const email = response.headers.get('Remote-Email');
-    const groupsHeader = response.headers.get('Remote-Groups');
-    const groups = groupsHeader ? groupsHeader.split(',').map(g => g.trim()) : [];
-
-    if (username && email) {
-      return {
-        id: username,
-        email: email,
-        groups: groups,
-      };
+    if (!email) {
+      throw new Error('Token missing required "email" claim');
     }
 
-    return null;
+    // Extract roles from Zitadel custom claim
+    // Zitadel provides roles as: { "role_name": { "org_id": "..." }, ... }
+    const rolesObj = payload['urn:zitadel:iam:org:project:roles'];
+    const groups = rolesObj ? Object.keys(rolesObj) : [];
+
+    return {
+      id: sub,
+      email: email,
+      groups: groups,
+    };
   } catch (error) {
-    console.error('Session validation error:', error);
+    if (error instanceof Error) {
+      console.error('Token validation error:', error.message);
+    } else {
+      console.error('Token validation error:', error);
+    }
     return null;
   }
 }

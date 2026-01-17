@@ -1,0 +1,72 @@
+---
+# Zitadel Configuration for Seance
+# https://zitadel.com/docs/self-hosting/manage/configure
+
+Log:
+  Level: info
+  Formatter:
+    Format: text
+
+# External domain configuration
+ExternalDomain: auth.dev.localhost
+ExternalPort: 443
+ExternalSecure: true
+
+# TLS is handled by Caddy reverse proxy
+# Zitadel listens on HTTP internally
+Port: 8080
+TLS:
+  Enabled: false
+
+# Database configuration - using embedded CockroachDB for development
+# For production, use external PostgreSQL
+Database:
+  cockroach:
+    Host: localhost
+    Port: 26257
+    Database: zitadel
+    MaxOpenConns: 20
+    MaxConnLifetime: 30m
+    MaxConnIdleTime: 5m
+    User:
+      Username: zitadel
+      SSL:
+        Mode: disable
+
+# Machine key for encryption
+# IMPORTANT: Change this in production and keep it secret
+Machine:
+  Identification:
+    Hostname: seance-dev
+    Webhook:
+      Enabled: false
+
+# Default instance configuration
+DefaultInstance:
+  # This will be the admin org
+  Org:
+    Name: Seance
+    # Human must be set for initial admin user
+    Human:
+      UserName: admin
+      FirstName: Admin
+      LastName: User
+      Email:
+        Address: admin@seance.dev
+        Verified: true
+      Password: "ChangeThisPassword123!"  # Change after first login
+
+  # Enable self-registration for public signup
+  Features:
+    LoginDefaultOrg: true
+    # Allow users to register themselves
+    EnableImpersonation: true
+
+# SystemDefaults:
+#   # Optional: Configure password policy
+#   PasswordComplexityPolicy:
+#     MinLength: 8
+#     HasLowercase: true
+#     HasUppercase: true
+#     HasNumber: true
+#     HasSymbol: false

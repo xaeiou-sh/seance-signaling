@@ -1,4 +1,4 @@
-// Authentication context and provider - Authelia integration
+// Authentication context and provider - Zitadel OIDC integration
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { trpc } from './trpc-provider';
 
@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/auth/me`, {
-        credentials: 'include', // Include cookies for Authelia session
+        credentials: 'include', // Include cookies for Zitadel access token
       });
 
       if (response.ok) {
@@ -55,17 +55,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = () => {
-    // Redirect to Authelia login page
-    // Authelia will redirect back after successful login
-    // Use AUTH_DOMAIN from environment (auth.localhost in dev, auth.seance.dev in prod)
-    const authDomain = import.meta.env.VITE_AUTH_DOMAIN || 'auth.localhost';
-    window.location.href = `https://${authDomain}/?rd=${encodeURIComponent(window.location.href)}`;
+    // Redirect to Zitadel OIDC authorization endpoint
+    const authDomain = import.meta.env.VITE_AUTH_DOMAIN || 'auth.dev.localhost';
+    const clientId = import.meta.env.VITE_ZITADEL_CLIENT_ID;
+
+    if (!clientId) {
+      console.error('VITE_ZITADEL_CLIENT_ID is not set');
+      return;
+    }
+
+    const authUrl = new URL(`https://${authDomain}/oauth/v2/authorize`);
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', `${import.meta.env.VITE_BACKEND_URL}/auth/callback`);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('scope', 'openid email profile');
+    authUrl.searchParams.set('prompt', 'login');
+
+    window.location.href = authUrl.toString();
   };
 
-  const logout = () => {
-    // Redirect to Authelia logout endpoint
-    const authDomain = import.meta.env.VITE_AUTH_DOMAIN || 'auth.localhost';
-    window.location.href = `https://${authDomain}/logout?rd=${encodeURIComponent(window.location.origin)}`;
+  const logout = async () => {
+    // Call backend logout endpoint to clear cookies
+    try {
+      await fetch(`${import.meta.env.VITE_BACKEND_URL}/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+
+    // Clear local state
+    setUser(null);
+
+    // Redirect to Zitadel end session endpoint
+    const authDomain = import.meta.env.VITE_AUTH_DOMAIN || 'auth.dev.localhost';
+    const logoutUrl = new URL(`https://${authDomain}/oidc/v1/end_session`);
+    logoutUrl.searchParams.set('post_logout_redirect_uri', window.location.origin);
+
+    window.location.href = logoutUrl.toString();
   };
 
   const refetchUser = () => {

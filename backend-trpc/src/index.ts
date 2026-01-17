@@ -12,6 +12,7 @@ import { registerTRPC } from './trpc/adapter.js';
 import { appRouter } from './trpc/router.js';
 import Stripe from 'stripe';
 import { storeSubscription, deleteSubscription } from './stripe/subscription-storage.js';
+import { Issuer, type BaseClient } from 'openid-client';
 
 const app = express();
 
@@ -90,10 +91,44 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (re
 });
 
 // Middleware
-app.use(cors({ credentials: true, origin: true })); // Allow credentials for Authelia cookies
-app.use(cookieParser()); // Parse Authelia session cookies
+app.use(cors({ credentials: true, origin: true })); // Allow credentials for Zitadel auth cookies
+app.use(cookieParser()); // Parse Zitadel access token cookies
 app.use(express.json({ limit: '500mb' })); // For large deployments
 app.use(express.urlencoded({ extended: true }));
+
+// Initialize OIDC client for Zitadel
+let oidcClient: BaseClient | null = null;
+
+async function initializeOIDC() {
+  const issuerUrl = process.env.ZITADEL_ISSUER;
+  const clientId = process.env.ZITADEL_CLIENT_ID;
+  const clientSecret = process.env.ZITADEL_CLIENT_SECRET;
+
+  if (!issuerUrl || !clientId || !clientSecret) {
+    console.warn('[OIDC] Missing configuration (ZITADEL_ISSUER, CLIENT_ID, CLIENT_SECRET)');
+    console.warn('[OIDC] Auth endpoints will not work until configuration is set');
+    return;
+  }
+
+  try {
+    const zitadelIssuer = await Issuer.discover(issuerUrl);
+    oidcClient = new zitadelIssuer.Client({
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uris: [
+        'https://backend.dev.localhost/auth/callback',
+        'https://backend.seance.dev/auth/callback',
+      ],
+      response_types: ['code'],
+    });
+    console.log('[OIDC] Client initialized successfully');
+  } catch (error) {
+    console.error('[OIDC] Failed to initialize client:', error);
+  }
+}
+
+// Initialize OIDC client on startup
+initializeOIDC().catch(console.error);
 
 // Load configuration from config.yml
 function loadConfig() {
@@ -337,6 +372,82 @@ app.get('/updates/darwin-arm64/download-latest', (req, res) => {
     .type('application/x-apple-diskimage')
     .header('Content-Disposition', `attachment; filename="${filename}"`)
     .send(fileData);
+});
+
+// OIDC Callback endpoint
+app.get('/auth/callback', async (req, res) => {
+  if (!oidcClient) {
+    res.status(500).send('OIDC not configured. Please set ZITADEL_ISSUER, CLIENT_ID, and CLIENT_SECRET.');
+    return;
+  }
+
+  const { code, state } = req.query;
+
+  if (!code || typeof code !== 'string') {
+    res.status(400).send('Missing authorization code');
+    return;
+  }
+
+  try {
+    // Exchange authorization code for tokens
+    const tokenSet = await oidcClient.callback(
+      req.protocol + '://' + req.get('host') + req.path,
+      { code },
+      { state: state as string }
+    );
+
+    if (!tokenSet.access_token) {
+      throw new Error('No access token received from Zitadel');
+    }
+
+    // Get cookie domain (strip 'backend.' from hostname)
+    const host = req.get('host') || '';
+    const cookieDomain = host.replace('backend.', '');
+
+    // Store access token in httpOnly cookie
+    res.cookie('seance_token', tokenSet.access_token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      domain: cookieDomain,
+      maxAge: (tokenSet.expires_in || 3600) * 1000, // Default 1 hour
+      path: '/',
+    });
+
+    // Store refresh token if present
+    if (tokenSet.refresh_token) {
+      res.cookie('seance_refresh_token', tokenSet.refresh_token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        domain: cookieDomain,
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        path: '/',
+      });
+    }
+
+    console.log('[Auth] User logged in successfully');
+
+    // Redirect to dashboard
+    res.redirect(`https://${cookieDomain}/dashboard`);
+  } catch (error) {
+    console.error('[Auth] OAuth callback error:', error);
+    res.status(500).send('Authentication failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+  }
+});
+
+// Logout endpoint
+app.post('/auth/logout', (req, res) => {
+  const host = req.get('host') || '';
+  const cookieDomain = host.replace('backend.', '');
+
+  // Clear auth cookies
+  res.clearCookie('seance_token', { domain: cookieDomain, path: '/' });
+  res.clearCookie('seance_refresh_token', { domain: cookieDomain, path: '/' });
+
+  console.log('[Auth] User logged out');
+
+  res.json({ success: true });
 });
 
 // Register tRPC

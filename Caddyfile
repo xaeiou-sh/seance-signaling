@@ -7,11 +7,12 @@
 	# Automatic HTTPS is enabled by default for all domains
 }
 
-# Authelia authentication server
+# Zitadel OIDC authentication server
 {$AUTH_DOMAIN} {
-	reverse_proxy localhost:9091 {
+	reverse_proxy localhost:8080 {
 		header_up Host {host}
 		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
 		header_up X-Forwarded-Proto {scheme}
 	}
 
@@ -23,22 +24,7 @@
 
 # Backend domain (set by CADDY_DOMAIN env var)
 {$CADDY_DOMAIN} {
-	# Define browser routes that require authentication (redirects to Authelia login)
-	@dashboard {
-		path /dashboard*
-	}
-
-	# Forward authentication to Authelia for browser routes
-	# This redirects unauthenticated users to Authelia login page
-	handle @dashboard {
-		forward_auth {$AUTH_DOMAIN} {
-			uri /api/verify?rd=https://{$CADDY_DOMAIN}/
-			copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
-		}
-	}
-
-	# API routes (/api/*, /trpc/*) do NOT use forward_auth
-	# Express validates sessions directly via cookies for fine-grained control
+	# No forward_auth needed with OIDC - Express validates tokens directly
 	# PostHog reverse proxy - routes analytics through our domain to bypass ad blockers
 	# Enable CORS for all domains to avoid debugging issues
 	@beholder_static {
