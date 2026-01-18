@@ -117,6 +117,9 @@
       export ZITADEL_FIRSTINSTANCE_ORG_NAME="Seance"
       export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME="admin"
       export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD="ChangeThisPassword123!"
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL="admin@seance.dev"
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME="Admin"
+      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME="User"
 
       ${lib.getExe pkgs.zitadel} start-from-init --masterkeyFromEnv
     '';
