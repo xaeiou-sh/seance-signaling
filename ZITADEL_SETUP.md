@@ -44,49 +44,34 @@ All services will start:
    - **Password:** `ChangeThisPassword123!`
 3. Change the admin password immediately
 
-### Step 3: Create OIDC Application
+### Step 3: Automated OIDC Application Setup
 
-1. In Zitadel console, go to **Projects**
-2. Create a new project called **"Seance"**
-3. Inside the project, create a new **Application**:
-   - **Name:** Seance Web App
-   - **Type:** Web
-   - **Authentication Method:** PKCE (or Code if PKCE not available)
+**NEW!** The OIDC application is now created automatically:
 
-4. Set redirect URIs:
-   ```
-   https://backend.dev.localhost/auth/callback
-   https://backend.seance.dev/auth/callback
-   ```
+```bash
+setup-zitadel-app
+```
 
-5. Set post-logout redirect URIs:
-   ```
-   https://dev.localhost
-   https://seance.dev
-   ```
+This script will:
+- Create a project called "Seance"
+- Create an OIDC application "Seance Web" with proper redirect URIs
+- Generate CLIENT_ID and CLIENT_SECRET
+- Save credentials to `.state/zitadel/app-credentials.env`
 
-6. Enable these grant types:
-   - Authorization Code
-   - Refresh Token
+The redirect URIs are automatically configured as:
+- **Callback:** `https://backend.dev.localhost/auth/callback`, `https://backend.seance.dev/auth/callback`
+- **Post-logout:** `https://dev.localhost`, `https://seance.dev`
 
-7. Enable these scopes:
-   - `openid`
-   - `email`
-   - `profile`
+### Step 4: Configure Environment Variables
 
-8. Save the application
+After running `setup-zitadel-app`, add the credentials to your `devenv.nix`:
 
-### Step 4: Get Client Credentials
+```bash
+# View the credentials
+cat .state/zitadel/app-credentials.env
+```
 
-After creating the application:
-
-1. Copy the **Client ID** (looks like: `123456789012345678@seance`)
-2. Generate a **Client Secret** (if using Code flow)
-3. Save both values
-
-### Step 5: Configure Environment Variables
-
-Update `devenv.nix` or create a `.env` file in the backend:
+Copy the CLIENT_ID and CLIENT_SECRET values and add to `devenv.nix`:
 
 ```nix
 env.ZITADEL_CLIENT_ID = "YOUR_CLIENT_ID_HERE";
@@ -94,14 +79,7 @@ env.ZITADEL_CLIENT_SECRET = "YOUR_CLIENT_SECRET_HERE";
 env.VITE_ZITADEL_CLIENT_ID = "YOUR_CLIENT_ID_HERE";
 ```
 
-Or in `.env`:
-```bash
-ZITADEL_CLIENT_ID=YOUR_CLIENT_ID_HERE
-ZITADEL_CLIENT_SECRET=YOUR_CLIENT_SECRET_HERE
-VITE_ZITADEL_CLIENT_ID=YOUR_CLIENT_ID_HERE
-```
-
-### Step 6: Restart Services
+### Step 5: Restart Services
 
 ```bash
 # Stop devenv (Ctrl+C)

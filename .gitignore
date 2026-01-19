@@ -35,3 +35,4 @@ landing-page/node_modules/
 
 # Backend dependencies
 backend-fastify/node_modules/
+.state/zitadel/app-credentials.env

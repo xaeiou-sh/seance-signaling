@@ -13,3 +13,10 @@ inputs:
 # If you have more than one devenv you can merge them
 #imports:
 # - ./backend
+
+# SecretSpec - Declarative secrets management
+# https://devenv.sh/integrations/secretspec/
+secretspec:
+  enable: true
+  provider: dotenv  # Stores secrets in .env file (gitignored)
+  profile: default  # Use 'production' profile for prod deployment

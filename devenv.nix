@@ -6,9 +6,8 @@
   ...
 }: {
   # https://devenv.sh/basics/
-  dotenv.enable = true;
+  # Note: dotenv is handled by secretspec - see devenv.yaml and secretspec.toml
   env.GREET = "devenv";
-
   # Default environment (local development)
   # Uses .localhost domains with automatic HTTPS via Caddy
   # Backend and frontend use random high ports to avoid conflicts
@@ -24,10 +23,10 @@
 
   # Zitadel OIDC configuration
   env.ZITADEL_ISSUER = "https://auth.dev.localhost";
-  # These will be set after Zitadel is initialized - see zitadel-config.yaml
-  env.ZITADEL_CLIENT_ID = "placeholder-set-after-init";
-  env.ZITADEL_CLIENT_SECRET = "placeholder-set-after-init";
-  env.VITE_ZITADEL_CLIENT_ID = "placeholder-set-after-init";
+  # Secrets managed by secretspec - see secretspec.toml and .env
+  env.ZITADEL_CLIENT_ID = config.secretspec.secrets.ZITADEL_CLIENT_ID or "";
+  env.ZITADEL_CLIENT_SECRET = config.secretspec.secrets.ZITADEL_CLIENT_SECRET or "";
+  env.VITE_ZITADEL_CLIENT_ID = config.secretspec.secrets.VITE_ZITADEL_CLIENT_ID or "";
 
   # Production profile (just changes the domains, everything else is the same)
   profiles.prod.module = {
@@ -101,15 +100,18 @@
         ''ZITADEL_EXTERNALSECURE=true''
         ''ZITADEL_TLS_ENABLED=false''
         ''ZITADEL_PORT=8080''
-        ''ZITADEL_MASTERKEY=MasterkeyNeedsToHave32Characters''
+        # Master key from secretspec (must be 32 bytes)
+        ''ZITADEL_MASTERKEY=${config.secretspec.secrets.ZITADEL_MASTERKEY or "MasterkeyNeedsToHave32Characters"}''
         ''ZITADEL_DATABASE_POSTGRES_HOST=localhost''
         ''ZITADEL_DATABASE_POSTGRES_PORT=5432''
         ''ZITADEL_DATABASE_POSTGRES_DATABASE=zitadel''
         ''ZITADEL_DATABASE_POSTGRES_USER_USERNAME=zitadel''
-        ''ZITADEL_DATABASE_POSTGRES_USER_PASSWORD=zitadel''
+        # Postgres password from secretspec
+        ''ZITADEL_DATABASE_POSTGRES_USER_PASSWORD=${config.secretspec.secrets.POSTGRES_PASSWORD or "zitadel_dev_password"}''
         ''ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE=disable''
         ''ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME=zitadel''
-        ''ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD=zitadel''
+        # Postgres admin password from secretspec
+        ''ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD=${config.secretspec.secrets.POSTGRES_PASSWORD or "zitadel_dev_password"}''
         ''ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE=disable''
         ''ZITADEL_FIRSTINSTANCE_ORG_NAME="Seance"''
         # Use email as username to avoid domain suffix (admin@org.domain)
@@ -125,6 +127,14 @@
         ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED=false''
         # Disable domain suffix on login names
         ''ZITADEL_DEFAULTINSTANCE_DOMAINPOLICY_USERLOGINMUSTBEDOMAIN=false''
+        # Create machine user for API automation
+        ''ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME=seance-automation''
+        ''ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME=Seance Automation''
+        ''ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINEKEY_TYPE=1''
+        ''ZITADEL_FIRSTINSTANCE_MACHINEKEYPATH=.state/zitadel/machine-key.json''
+        # Generate a PAT for the machine user (expires in 9999)
+        ''ZITADEL_FIRSTINSTANCE_PATPATH=.state/zitadel/pat.txt''
+        ''ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE=9999-12-31T23:59:59Z''
       ];
     };
     exec = ''
@@ -229,6 +239,10 @@
     echo "Password: ChangeThisPassword123!"
   '';
 
+  scripts.setup-zitadel-app.exec = ''
+    ${pkgs.bash}/bin/bash ./scripts/setup-zitadel-app.sh
+  '';
+
   scripts.clear-zitadel.exec = ''
     echo "🧹 Clearing Zitadel data..."
     echo ""
@@ -325,6 +339,7 @@
     echo "  clear-data                 - Clear all application data (Zitadel, Redis sessions)"
     echo "  clear-zitadel              - Clear only Zitadel data (users, projects, etc.)"
     echo "  check-zitadel-admin        - Show the admin username and login details"
+    echo "  setup-zitadel-app          - Create OIDC app and get CLIENT_ID/SECRET (run once)"
     echo ""
     echo "🌐 Local URLs (HTTPS via Caddy):"
     echo "  Marketing: https://dev.localhost  (Vite with hot reload)"
@@ -337,11 +352,11 @@
     echo "💡 Same setup for dev and production - just different domains!"
     echo ""
     echo "🔐 First-time setup:"
-    echo "  1. Trust Caddy CA: run trust-caddy-ca"
-    echo "  2. Run check-zitadel-admin to see the admin username"
-    echo "  3. Visit https://auth.dev.localhost/ui/console and login"
-    echo "  4. Create a project and OIDC application"
-    echo "  5. Copy CLIENT_ID and CLIENT_SECRET to .env or devenv.nix"
+    echo "  1. Copy .env.example to .env (secrets managed by secretspec)"
+    echo "  2. Trust Caddy CA: run trust-caddy-ca"
+    echo "  3. Start services: devenv up"
+    echo "  4. Run setup-zitadel-app to auto-create OIDC app (writes to .env)"
+    echo "  5. Restart devenv to load new credentials from .env"
   '';
 
   # https://devenv.sh/tasks/
