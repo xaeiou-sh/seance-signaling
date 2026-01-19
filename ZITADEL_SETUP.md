@@ -23,7 +23,19 @@ This document explains how to set up and test the new Zitadel OIDC authenticatio
 
 ## First-Time Setup
 
-### Step 1: Start Services
+### Step 1: Initialize Secrets
+
+```bash
+# Copy example environment file
+cp .env.example .env
+
+# Edit .env if needed (defaults should work for dev)
+# The setup-zitadel-app script will auto-populate OIDC credentials
+```
+
+**Note:** This project uses [SecretSpec](https://secretspec.dev) for secrets management. See [SECRETS.md](SECRETS.md) for details.
+
+### Step 2: Start Services
 
 ```bash
 devenv up
@@ -36,7 +48,7 @@ All services will start:
 - Frontend (dev.localhost)
 - Valkey/Redis (for Stripe data)
 
-### Step 2: Access Zitadel Console
+### Step 3: Access Zitadel Console
 
 1. Visit `https://auth.dev.localhost`
 2. Login with default admin credentials:
@@ -44,9 +56,9 @@ All services will start:
    - **Password:** `ChangeThisPassword123!`
 3. Change the admin password immediately
 
-### Step 3: Automated OIDC Application Setup
+### Step 4: Automated OIDC Application Setup
 
-**NEW!** The OIDC application is now created automatically:
+**NEW!** The OIDC application is created automatically:
 
 ```bash
 setup-zitadel-app
@@ -56,28 +68,13 @@ This script will:
 - Create a project called "Seance"
 - Create an OIDC application "Seance Web" with proper redirect URIs
 - Generate CLIENT_ID and CLIENT_SECRET
-- Save credentials to `.state/zitadel/app-credentials.env`
+- **Automatically update `.env` with credentials** (managed by SecretSpec)
 
 The redirect URIs are automatically configured as:
 - **Callback:** `https://backend.dev.localhost/auth/callback`, `https://backend.seance.dev/auth/callback`
 - **Post-logout:** `https://dev.localhost`, `https://seance.dev`
 
-### Step 4: Configure Environment Variables
-
-After running `setup-zitadel-app`, add the credentials to your `devenv.nix`:
-
-```bash
-# View the credentials
-cat .state/zitadel/app-credentials.env
-```
-
-Copy the CLIENT_ID and CLIENT_SECRET values and add to `devenv.nix`:
-
-```nix
-env.ZITADEL_CLIENT_ID = "YOUR_CLIENT_ID_HERE";
-env.ZITADEL_CLIENT_SECRET = "YOUR_CLIENT_SECRET_HERE";
-env.VITE_ZITADEL_CLIENT_ID = "YOUR_CLIENT_ID_HERE";
-```
+**Credentials are automatically loaded** - no manual configuration needed!
 
 ### Step 5: Restart Services
 
