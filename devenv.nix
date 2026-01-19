@@ -94,32 +94,42 @@
   processes.zitadel = {
     process-compose = {
       depends_on.postgres.condition = "process_healthy";
+      environment = [
+        # Zitadel configuration via environment variables
+        ''ZITADEL_EXTERNALDOMAIN=${config.env.AUTH_DOMAIN}''
+        ''ZITADEL_EXTERNALPORT=443''
+        ''ZITADEL_EXTERNALSECURE=true''
+        ''ZITADEL_TLS_ENABLED=false''
+        ''ZITADEL_PORT=8080''
+        ''ZITADEL_MASTERKEY=MasterkeyNeedsToHave32Characters''
+        ''ZITADEL_DATABASE_POSTGRES_HOST=localhost''
+        ''ZITADEL_DATABASE_POSTGRES_PORT=5432''
+        ''ZITADEL_DATABASE_POSTGRES_DATABASE=zitadel''
+        ''ZITADEL_DATABASE_POSTGRES_USER_USERNAME=zitadel''
+        ''ZITADEL_DATABASE_POSTGRES_USER_PASSWORD=zitadel''
+        ''ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE=disable''
+        ''ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME=zitadel''
+        ''ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD=zitadel''
+        ''ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE=disable''
+        ''ZITADEL_FIRSTINSTANCE_ORG_NAME="Seance"''
+        # Use email as username to avoid domain suffix (admin@org.domain)
+        # Must use valid email format - .localhost is not accepted by Zitadel
+        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME=admin@dev.localhost''
+        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD=ChangeThisPassword123!''
+        # Correct variable name is EMAIL_ADDRESS (not EMAIL)
+        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS=admin@seance.dev''
+        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED=true''
+        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME="Admin"''
+        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME="User"''
+        # Correct variable name has no underscores between CHANGE and REQUIRED
+        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED=false''
+        # Disable domain suffix on login names
+        ''ZITADEL_DEFAULTINSTANCE_DOMAINPOLICY_USERLOGINMUSTBEDOMAIN=false''
+      ];
     };
     exec = ''
       mkdir -p .state/zitadel
 
-      # Zitadel configuration via environment variables
-      export ZITADEL_EXTERNALDOMAIN=${config.env.AUTH_DOMAIN}
-      export ZITADEL_EXTERNALPORT=443
-      export ZITADEL_EXTERNALSECURE=true
-      export ZITADEL_TLS_ENABLED=false
-      export ZITADEL_PORT=8080
-      export ZITADEL_MASTERKEY="MasterkeyNeedsToHave32Characters"
-      export ZITADEL_DATABASE_POSTGRES_HOST=localhost
-      export ZITADEL_DATABASE_POSTGRES_PORT=5432
-      export ZITADEL_DATABASE_POSTGRES_DATABASE=zitadel
-      export ZITADEL_DATABASE_POSTGRES_USER_USERNAME=zitadel
-      export ZITADEL_DATABASE_POSTGRES_USER_PASSWORD=zitadel
-      export ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE=disable
-      export ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME=zitadel
-      export ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD=zitadel
-      export ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE=disable
-      export ZITADEL_FIRSTINSTANCE_ORG_NAME="Seance"
-      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME="admin"
-      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD="ChangeThisPassword123!"
-      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL="admin@seance.dev"
-      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME="Admin"
-      export ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME="User"
 
       ${lib.getExe pkgs.zitadel} start-from-init --masterkeyFromEnv
     '';
@@ -144,7 +154,7 @@
   processes.postgres = {
     process-compose = {
       readiness_probe = {
-        exec.command = "${pkgs.postgresql_17}/bin/pg_isready -h 127.0.0.1 -p 5432";
+        exec.command = "${pkgs.postgresql_17}/bin/pg_isready -h 127.0.0.1 -p 5432 -d postgres";
         initial_delay_seconds = 1;
         period_seconds = 1;
       };
@@ -208,6 +218,15 @@
     echo "Cleaning up any leftover Docker containers..."
     docker rm -f y-webrtc-signaling 2>/dev/null || true
     echo "Done!"
+  '';
+
+  scripts.check-zitadel-admin.exec = ''
+    echo "🔍 Checking Zitadel admin user..."
+    echo ""
+    psql -h localhost -p 5432 -U zitadel -d zitadel -c "SELECT u.username, u.state, h.is_email_verified, h.password_change_required, n.password_set, h.email FROM projections.users14 u JOIN projections.users14_humans h ON u.id = h.user_id JOIN projections.users14_notifications n ON u.id = n.user_id ORDER BY u.creation_date LIMIT 1;" 2>&1
+    echo ""
+    echo "Login with the username shown above at https://auth.dev.localhost/ui/console"
+    echo "Password: ChangeThisPassword123!"
   '';
 
   scripts.clear-zitadel.exec = ''
@@ -305,6 +324,7 @@
     echo "  cleanup-docker             - Remove leftover Docker containers"
     echo "  clear-data                 - Clear all application data (Zitadel, Redis sessions)"
     echo "  clear-zitadel              - Clear only Zitadel data (users, projects, etc.)"
+    echo "  check-zitadel-admin        - Show the admin username and login details"
     echo ""
     echo "🌐 Local URLs (HTTPS via Caddy):"
     echo "  Marketing: https://dev.localhost  (Vite with hot reload)"
@@ -318,9 +338,10 @@
     echo ""
     echo "🔐 First-time setup:"
     echo "  1. Trust Caddy CA: run trust-caddy-ca"
-    echo "  2. Visit https://auth.dev.localhost and login with admin/ChangeThisPassword123!"
-    echo "  3. Create a project and OIDC application"
-    echo "  4. Copy CLIENT_ID and CLIENT_SECRET to .env or devenv.nix"
+    echo "  2. Run check-zitadel-admin to see the admin username"
+    echo "  3. Visit https://auth.dev.localhost/ui/console and login"
+    echo "  4. Create a project and OIDC application"
+    echo "  5. Copy CLIENT_ID and CLIENT_SECRET to .env or devenv.nix"
   '';
 
   # https://devenv.sh/tasks/
