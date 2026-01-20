@@ -19,6 +19,7 @@
   env.AUTH_DOMAIN = "auth.dev.localhost";
   env.DEV_MODE = "true";
   env.VITE_BACKEND_URL = "https://backend.dev.localhost";
+  env.BACKEND_URL = "https://backend.dev.localhost"; # Same as VITE_BACKEND_URL for OAuth redirect_uri consistency
   env.VITE_AUTH_DOMAIN = "auth.dev.localhost";
 
   # Zitadel OIDC configuration
@@ -28,6 +29,11 @@
   env.ZITADEL_CLIENT_SECRET = config.secretspec.secrets.ZITADEL_CLIENT_SECRET or "";
   env.VITE_ZITADEL_CLIENT_ID = config.secretspec.secrets.VITE_ZITADEL_CLIENT_ID or "";
 
+  # Stripe payment processing
+  env.STRIPE_SECRET_KEY = config.secretspec.secrets.STRIPE_SECRET_KEY or "";
+  env.STRIPE_WEBHOOK_SECRET = config.secretspec.secrets.STRIPE_WEBHOOK_SECRET or "";
+  env.STRIPE_PRICE_ID = config.secretspec.secrets.STRIPE_PRICE_ID or "";
+
   # Production profile (just changes the domains, everything else is the same)
   profiles.prod.module = {
     env.CADDY_DOMAIN = "backend.seance.dev";
@@ -36,6 +42,7 @@
     env.AUTH_DOMAIN = "auth.seance.dev";
     env.DEV_MODE = "false";
     env.VITE_BACKEND_URL = "https://backend.seance.dev";
+    env.BACKEND_URL = "https://backend.seance.dev"; # Same as VITE_BACKEND_URL for OAuth redirect_uri consistency
     env.VITE_AUTH_DOMAIN = "auth.seance.dev";
 
     # Zitadel OIDC configuration (production)

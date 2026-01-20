@@ -99,6 +99,49 @@ fi
 
 echo "✅ OIDC application created!"
 
+# Grant admin user access to the project
+echo "👤 Granting admin user access to project..."
+
+# Get admin user ID by searching for the email
+ADMIN_EMAIL="admin@seance.dev"
+USER_SEARCH_RESPONSE=$(curl -sf -X POST "$ZITADEL_URL/management/v1/users/_search" \
+  -H "Authorization: Bearer $PAT" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"query\": {
+      \"offset\": \"0\",
+      \"limit\": 1,
+      \"asc\": true
+    },
+    \"queries\": [
+      {
+        \"emailQuery\": {
+          \"emailAddress\": \"$ADMIN_EMAIL\"
+        }
+      }
+    ]
+  }")
+
+USER_ID=$(echo "$USER_SEARCH_RESPONSE" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+if [ -z "$USER_ID" ]; then
+  echo "⚠️  Could not find admin user with email $ADMIN_EMAIL"
+  echo "   You may need to manually grant access in Zitadel console"
+else
+  echo "   Found admin user: $USER_ID"
+
+  # Grant user access to project
+  GRANT_RESPONSE=$(curl -sf -X POST "$ZITADEL_URL/management/v1/users/$USER_ID/grants" \
+    -H "Authorization: Bearer $PAT" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"projectId\": \"$PROJECT_ID\",
+      \"roleKeys\": []
+    }")
+
+  echo "✅ Admin user granted access to project"
+fi
+
 # Update or create .env file with credentials
 # This works with secretspec's dotenv provider
 if [ -f ".env" ]; then

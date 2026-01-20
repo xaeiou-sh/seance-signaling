@@ -16,10 +16,7 @@ if (!ZITADEL_ISSUER) {
 }
 
 // JWKS endpoint for JWT verification
-const JWKS = createRemoteJWKSet(new URL(`${ZITADEL_ISSUER}/.well-known/openid-configuration`).href.replace(
-  '/.well-known/openid-configuration',
-  '/oauth/v2/keys'
-));
+const JWKS = createRemoteJWKSet(new URL(`${ZITADEL_ISSUER}/oauth/v2/keys`));
 
 interface ZitadelTokenPayload extends JWTPayload {
   sub: string;

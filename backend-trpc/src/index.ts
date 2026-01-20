@@ -1,5 +1,14 @@
 // Seance Backend Server
 // Serves desktop app updates + web app
+
+// Disable SSL verification in development for .localhost domains
+// This is safe because .localhost domains are local-only
+const isDevelopment = process.env.ZITADEL_ISSUER?.includes('.localhost') ?? false;
+if (isDevelopment) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  console.log('[Dev] SSL verification disabled for .localhost domains');
+}
+
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -12,7 +21,6 @@ import { registerTRPC } from './trpc/adapter.js';
 import { appRouter } from './trpc/router.js';
 import Stripe from 'stripe';
 import { storeSubscription, deleteSubscription } from './stripe/subscription-storage.js';
-import { Issuer, type BaseClient } from 'openid-client';
 
 const app = express();
 
@@ -95,40 +103,6 @@ app.use(cors({ credentials: true, origin: true })); // Allow credentials for Zit
 app.use(cookieParser()); // Parse Zitadel access token cookies
 app.use(express.json({ limit: '500mb' })); // For large deployments
 app.use(express.urlencoded({ extended: true }));
-
-// Initialize OIDC client for Zitadel
-let oidcClient: BaseClient | null = null;
-
-async function initializeOIDC() {
-  const issuerUrl = process.env.ZITADEL_ISSUER;
-  const clientId = process.env.ZITADEL_CLIENT_ID;
-  const clientSecret = process.env.ZITADEL_CLIENT_SECRET;
-
-  if (!issuerUrl || !clientId || !clientSecret) {
-    console.warn('[OIDC] Missing configuration (ZITADEL_ISSUER, CLIENT_ID, CLIENT_SECRET)');
-    console.warn('[OIDC] Auth endpoints will not work until configuration is set');
-    return;
-  }
-
-  try {
-    const zitadelIssuer = await Issuer.discover(issuerUrl);
-    oidcClient = new zitadelIssuer.Client({
-      client_id: clientId,
-      client_secret: clientSecret,
-      redirect_uris: [
-        'https://backend.dev.localhost/auth/callback',
-        'https://backend.seance.dev/auth/callback',
-      ],
-      response_types: ['code'],
-    });
-    console.log('[OIDC] Client initialized successfully');
-  } catch (error) {
-    console.error('[OIDC] Failed to initialize client:', error);
-  }
-}
-
-// Initialize OIDC client on startup
-initializeOIDC().catch(console.error);
 
 // Load configuration from config.yml
 function loadConfig() {
@@ -376,27 +350,55 @@ app.get('/updates/darwin-arm64/download-latest', (req, res) => {
 
 // OIDC Callback endpoint
 app.get('/auth/callback', async (req, res) => {
-  if (!oidcClient) {
-    res.status(500).send('OIDC not configured. Please set ZITADEL_ISSUER, CLIENT_ID, and CLIENT_SECRET.');
-    return;
-  }
-
-  const { code, state } = req.query;
+  const { code } = req.query;
 
   if (!code || typeof code !== 'string') {
     res.status(400).send('Missing authorization code');
     return;
   }
 
-  try {
-    // Exchange authorization code for tokens
-    const tokenSet = await oidcClient.callback(
-      req.protocol + '://' + req.get('host') + req.path,
-      { code },
-      { state: state as string }
-    );
+  const issuer = process.env.ZITADEL_ISSUER;
+  const clientId = process.env.ZITADEL_CLIENT_ID;
+  const clientSecret = process.env.ZITADEL_CLIENT_SECRET;
 
-    if (!tokenSet.access_token) {
+  if (!issuer || !clientId || !clientSecret) {
+    res.status(500).send('OIDC not configured. Please set ZITADEL_ISSUER, CLIENT_ID, and CLIENT_SECRET.');
+    return;
+  }
+
+  try {
+    // Use environment variable for redirect URI to ensure it matches what frontend sent
+    // Fallback to constructing from request if not set
+    const redirectUri = process.env.BACKEND_URL
+      ? `${process.env.BACKEND_URL}/auth/callback`
+      : `${req.protocol}://${req.get('host')}/auth/callback`;
+
+    console.log('[Auth] Exchanging code for token, redirect_uri:', redirectUri);
+
+    // Exchange authorization code for tokens
+    // This is just a simple POST request - no library needed
+    const tokenResponse = await fetch(`${issuer}/oauth/v2/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: redirectUri,
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new Error(`Token exchange failed: ${tokenResponse.status} ${errorText}`);
+    }
+
+    const tokens = await tokenResponse.json();
+    const accessToken = tokens.access_token;
+
+    if (!accessToken) {
       throw new Error('No access token received from Zitadel');
     }
 
@@ -404,19 +406,21 @@ app.get('/auth/callback', async (req, res) => {
     const host = req.get('host') || '';
     const cookieDomain = host.replace('backend.', '');
 
+    console.log('[Auth] Setting cookies for domain:', cookieDomain);
+
     // Store access token in httpOnly cookie
-    res.cookie('seance_token', tokenSet.access_token, {
+    res.cookie('seance_token', accessToken, {
       httpOnly: true,
       secure: true,
       sameSite: 'lax',
       domain: cookieDomain,
-      maxAge: (tokenSet.expires_in || 3600) * 1000, // Default 1 hour
+      maxAge: (tokens.expires_in || 3600) * 1000,
       path: '/',
     });
 
     // Store refresh token if present
-    if (tokenSet.refresh_token) {
-      res.cookie('seance_refresh_token', tokenSet.refresh_token, {
+    if (tokens.refresh_token) {
+      res.cookie('seance_refresh_token', tokens.refresh_token, {
         httpOnly: true,
         secure: true,
         sameSite: 'lax',
@@ -426,7 +430,7 @@ app.get('/auth/callback', async (req, res) => {
       });
     }
 
-    console.log('[Auth] User logged in successfully');
+    console.log('[Auth] User logged in successfully, redirecting to dashboard');
 
     // Redirect to dashboard
     res.redirect(`https://${cookieDomain}/dashboard`);
