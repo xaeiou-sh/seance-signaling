@@ -7,14 +7,7 @@ import { posthog } from "@/lib/posthog";
 import { useAuth } from "@/lib/auth-context";
 
 export const Navigation = () => {
-  const { isAuthenticated, user, logout } = useAuth();
-
-  const handleLogoutClick = () => {
-    posthog.capture('logout_clicked', {
-      location: 'navigation',
-    });
-    logout();
-  };
+  const { isAuthenticated, user } = useAuth();
 
   const handleDownloadNavClick = () => {
     posthog.capture('download_nav_clicked', {
@@ -37,14 +30,15 @@ export const Navigation = () => {
           {isAuthenticated ? (
             <>
               {/* Authenticated State */}
-              <Button
-                variant="ghost"
-                onClick={handleLogoutClick}
-                className="hidden lg:inline-flex text-mist transition-colors duration-300 hover:bg-secondary hover:text-neon"
-              >
-                <User className="h-4 w-4" />
-                <span className="hidden xl:inline">{user?.email}</span>
-              </Button>
+              <Link to="/dashboard">
+                <Button
+                  variant="ghost"
+                  className="hidden lg:inline-flex text-mist transition-colors duration-300 hover:bg-secondary hover:text-neon"
+                >
+                  <User className="h-4 w-4" />
+                  <span className="hidden xl:inline">{user?.email}</span>
+                </Button>
+              </Link>
               <Link to="/dashboard">
                 <Button className={clsx(getStartedButtonStyle)}>
                   Dashboard

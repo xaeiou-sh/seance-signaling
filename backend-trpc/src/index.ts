@@ -397,10 +397,21 @@ app.get('/auth/callback', async (req, res) => {
 
     const tokens = await tokenResponse.json();
     const accessToken = tokens.access_token;
+    const idToken = tokens.id_token;
+
+    console.log('[Auth] Received tokens:', {
+      hasAccessToken: !!accessToken,
+      hasIdToken: !!idToken,
+      hasRefreshToken: !!tokens.refresh_token,
+    });
 
     if (!accessToken) {
       throw new Error('No access token received from Zitadel');
     }
+
+    // Use ID token for cookie if available (contains user claims like email)
+    // Otherwise fall back to access token
+    const tokenForCookie = idToken || accessToken;
 
     // Get cookie domain (strip 'backend.' from hostname)
     const host = req.get('host') || '';
@@ -408,8 +419,9 @@ app.get('/auth/callback', async (req, res) => {
 
     console.log('[Auth] Setting cookies for domain:', cookieDomain);
 
-    // Store access token in httpOnly cookie
-    res.cookie('seance_token', accessToken, {
+    // Store ID token in httpOnly cookie (contains user claims like email)
+    // ID tokens are JWTs that can be validated with JWKS
+    res.cookie('seance_token', tokenForCookie, {
       httpOnly: true,
       secure: true,
       sameSite: 'lax',

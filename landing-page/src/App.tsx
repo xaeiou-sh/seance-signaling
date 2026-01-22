@@ -5,8 +5,10 @@ import Download from "@/pages/Download";
 import Checkout from "@/pages/Checkout";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
+import Signout from "@/pages/Signout";
 import Dashboard from "@/pages/Dashboard";
 import TestTRPC from "@/pages/TestTRPC";
+import PleaseSupport from "@/pages/PleaseSupport";
 import { initPostHog } from "@/lib/posthog";
 import { usePageTracking } from "@/lib/usePageTracking";
 
@@ -20,8 +22,10 @@ function AppRoutes() {
       <Route path="/checkout" element={<Checkout />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/signout" element={<Signout />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/test-trpc" element={<TestTRPC />} />
+      <Route path="/please-support" element={<PleaseSupport />} />
     </Routes>
   );
 }

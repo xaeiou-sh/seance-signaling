@@ -4,7 +4,10 @@
   config,
   inputs,
   ...
-}: {
+}: let
+  postgresModule = import ./postgres.nix {inherit pkgs lib config;};
+in {
+  dotenv.enable = true;
   # https://devenv.sh/basics/
   # Note: dotenv is handled by secretspec - see devenv.yaml and secretspec.toml
   env.GREET = "devenv";
@@ -166,65 +169,9 @@
     '';
   };
 
-  # PostgreSQL for Zitadel
-  # Run as a process instead of service for better control over data location
-  processes.postgres = {
-    process-compose = {
-      readiness_probe = {
-        exec.command = "${pkgs.postgresql_17}/bin/pg_isready -h 127.0.0.1 -p 5432 -d postgres";
-        initial_delay_seconds = 1;
-        period_seconds = 1;
-      };
-    };
-    exec = ''
-            PGDATA=.state/postgres
-            mkdir -p "$PGDATA"
-
-            # Stop any existing server
-            ${pkgs.postgresql_17}/bin/pg_ctl -D "$PGDATA" stop 2>/dev/null || true
-            rm -f "$PGDATA/postmaster.pid" 2>/dev/null || true
-
-            # Initialize database if not already done
-            if [ ! -f "$PGDATA/PG_VERSION" ]; then
-              echo "Initializing PostgreSQL database..."
-              ${pkgs.postgresql_17}/bin/initdb -D "$PGDATA" --no-locale --encoding=UTF8
-
-              # Configure PostgreSQL
-              cat >> "$PGDATA/postgresql.conf" <<EOF
-      listen_addresses = '127.0.0.1'
-      port = 5432
-      unix_socket_directories = '$PWD/$PGDATA'
-      EOF
-
-              # Allow local connections without password for dev
-              cat > "$PGDATA/pg_hba.conf" <<EOF
-      local   all   all                 trust
-      host    all   all   127.0.0.1/32  trust
-      host    all   all   ::1/128       trust
-      EOF
-            fi
-
-            # Start PostgreSQL
-            ${pkgs.postgresql_17}/bin/pg_ctl -D "$PGDATA" -l "$PGDATA/postgres.log" -o "-k $PWD/$PGDATA" start
-
-            # Wait for PostgreSQL to be ready
-            for i in $(seq 1 30); do
-              if ${pkgs.postgresql_17}/bin/pg_isready -h 127.0.0.1 -p 5432 > /dev/null 2>&1; then
-                break
-              fi
-              sleep 0.5
-            done
-
-            # Create zitadel user and database if they don't exist
-            ${pkgs.postgresql_17}/bin/psql -h 127.0.0.1 -p 5432 -d postgres -c "SELECT 1 FROM pg_roles WHERE rolname='zitadel'" | grep -q 1 || \
-              ${pkgs.postgresql_17}/bin/psql -h 127.0.0.1 -p 5432 -d postgres -c "CREATE USER zitadel WITH PASSWORD 'zitadel' SUPERUSER"
-            ${pkgs.postgresql_17}/bin/psql -h 127.0.0.1 -p 5432 -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='zitadel'" | grep -q 1 || \
-              ${pkgs.postgresql_17}/bin/psql -h 127.0.0.1 -p 5432 -d postgres -c "CREATE DATABASE zitadel OWNER zitadel"
-
-            # Keep running (tail the log)
-            tail -f "$PGDATA/postgres.log"
-    '';
-  };
+  # PostgreSQL for Zitadel - imported from postgres.nix
+  # Handles running as root by delegating to postgres user
+  processes.postgres = postgresModule.postgres;
 
   # https://devenv.sh/scripts/
   scripts.hello.exec = ''

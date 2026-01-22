@@ -1,22 +1,23 @@
-import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { Navigate } from "react-router-dom";
 import { Navigation } from "@/components/navigation";
 import { HeroBackground } from "@/components/HeroBackground";
 import { CursorOverlay } from "@/components/CursorOverlay";
 import { useAuth } from "@/lib/auth-context";
 
 export default function Login() {
-  const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+  const hasRedirected = useRef(false);
 
+  // External redirect to Zitadel (exception: can't use <Navigate> for external URLs)
+  // Only redirect once when component determines user needs to authenticate
   useEffect(() => {
-    // If already authenticated, redirect to dashboard
-    if (isAuthenticated) {
-      navigate('/dashboard', { replace: true });
+    if (isLoading || isAuthenticated || hasRedirected.current) {
       return;
     }
 
-    // Otherwise, redirect to Zitadel OIDC authorization endpoint
+    hasRedirected.current = true;
+
     const authDomain = import.meta.env.VITE_AUTH_DOMAIN || 'auth.dev.localhost';
     const clientId = import.meta.env.VITE_ZITADEL_CLIENT_ID;
 
@@ -33,7 +34,12 @@ export default function Login() {
     authUrl.searchParams.set('prompt', 'login');
 
     window.location.href = authUrl.toString();
-  }, [isAuthenticated, navigate]);
+  }, [isLoading, isAuthenticated]);
+
+  // Already authenticated - redirect to dashboard (during render, no Effect!)
+  if (!isLoading && isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   return (
     <div className="min-h-screen bg-void">

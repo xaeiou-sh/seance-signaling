@@ -18,8 +18,21 @@ export async function createContext({ req, res }: CreateExpressContextOptions) {
     accessToken = req.cookies['seance_token'];
   }
 
+  if (accessToken) {
+    console.log('[Context] Found access token, validating...');
+  } else {
+    console.log('[Context] No access token found in cookies or headers');
+    console.log('[Context] Cookies:', Object.keys(req.cookies));
+  }
+
   // Validate token and get user info
   const user = await validateSession(accessToken);
+
+  if (user) {
+    console.log('[Context] User authenticated:', user.email);
+  } else {
+    console.log('[Context] No user authenticated');
+  }
 
   return {
     req,

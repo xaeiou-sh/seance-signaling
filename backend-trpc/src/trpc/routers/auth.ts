@@ -11,14 +11,28 @@ const userSchema = z.object({
 });
 
 export const authRouter = router({
-  // Get current authenticated user from Authelia headers
-  // Protected routes are enforced by Caddy forward_auth
+  // Get current authenticated user
   me: publicProcedure
     .meta({ openapi: { method: 'GET', path: '/auth/me' } })
     .input(z.void())
     .output(userSchema.nullable())
     .query(({ ctx }) => {
-      // Return user from Authelia headers or null if not authenticated
       return ctx.user;
+    }),
+
+  // Logout endpoint - clears cookies via backend
+  logout: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/auth/logout' } })
+    .input(z.void())
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx }) => {
+      // Clear cookies
+      const host = ctx.req.get('host') || '';
+      const cookieDomain = host.replace('backend.', '');
+
+      ctx.res.clearCookie('seance_token', { domain: cookieDomain, path: '/' });
+      ctx.res.clearCookie('seance_refresh_token', { domain: cookieDomain, path: '/' });
+
+      return { success: true };
     }),
 });

@@ -95,6 +95,24 @@ resource "cloudflare_record" "app" {
   proxied = false
 }
 
+resource "cloudflare_record" "root" {
+  zone_id = var.cloudflare_zone_id
+  name    = "@"
+  content = digitalocean_droplet.seance_backend.ipv4_address
+  type    = "A"
+  ttl     = 1
+  proxied = false
+}
+
+resource "cloudflare_record" "auth" {
+  zone_id = var.cloudflare_zone_id
+  name    = "auth"
+  content = digitalocean_droplet.seance_backend.ipv4_address
+  type    = "A"
+  ttl     = 1
+  proxied = false
+}
+
 # Generate Ansible inventory automatically
 resource "local_file" "ansible_inventory" {
   content = templatefile("${path.module}/ansible/inventory.yml.tpl", {
@@ -146,4 +164,14 @@ output "backend_domain" {
 output "app_domain" {
   description = "App domain (DNS configured)"
   value       = cloudflare_record.app.hostname
+}
+
+output "root_domain" {
+  description = "Root domain (DNS configured)"
+  value       = cloudflare_record.root.hostname
+}
+
+output "auth_domain" {
+  description = "Auth domain (DNS configured)"
+  value       = cloudflare_record.auth.hostname
 }

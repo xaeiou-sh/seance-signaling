@@ -48,10 +48,13 @@ export async function validateSession(accessToken: string | undefined): Promise<
     const email = payload.email;
 
     if (!sub) {
+      console.error('Token payload:', JSON.stringify(payload, null, 2));
       throw new Error('Token missing required "sub" claim');
     }
 
     if (!email) {
+      console.error('Token missing email. Available claims:', Object.keys(payload));
+      console.error('Full payload:', JSON.stringify(payload, null, 2));
       throw new Error('Token missing required "email" claim');
     }
 

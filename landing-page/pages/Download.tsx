@@ -51,7 +51,7 @@ export default function Download() {
 
     if (!isAuthenticated) {
       posthog.capture('download_auth_required');
-      navigate('/login');
+      navigate('/please-support');
       return;
     }
 
