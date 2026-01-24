@@ -75,11 +75,8 @@ k8s_resource(
   labels=['infrastructure'],
 )
 
-# Display URLs in Tilt UI
-k8s_resource(
-  'seance-ingress',
-  labels=['routing'],
-)
+# Ingress is automatically applied from the manifest
+# No need to manage it separately in Tilt
 
 print("""
 🔮 Seance Kubernetes Development

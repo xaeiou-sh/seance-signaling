@@ -16,6 +16,7 @@ export class SeanceChart extends Chart {
     // Backend deployment
     const backend = new kplus.Deployment(this, 'backend', {
       metadata: {
+        name: 'backend',
         namespace: namespace.name,
       },
       replicas: 1,
@@ -32,6 +33,9 @@ export class SeanceChart extends Chart {
             MARKETING_DOMAIN: kplus.EnvValue.fromValue('dev.localhost'),
             VITE_BACKEND_URL: kplus.EnvValue.fromValue('https://backend.dev.localhost'),
             BACKEND_URL: kplus.EnvValue.fromValue('https://backend.dev.localhost'),
+            // Dummy Stripe keys for dev mode (replace with real secrets in production)
+            STRIPE_SECRET_KEY: kplus.EnvValue.fromValue('sk_test_dummy_dev_key_replace_in_production'),
+            STRIPE_PRICE_ID: kplus.EnvValue.fromValue('price_dummy_dev_id_replace_in_production'),
           },
           securityContext: {
             ensureNonRoot: false, // Dev mode, we'll tighten this later
@@ -51,6 +55,7 @@ export class SeanceChart extends Chart {
     // Signaling server deployment (Docker container)
     const signaling = new kplus.Deployment(this, 'signaling', {
       metadata: {
+        name: 'signaling',
         namespace: namespace.name,
       },
       replicas: 1,
@@ -80,6 +85,7 @@ export class SeanceChart extends Chart {
     // Valkey (Redis) deployment for sessions
     const valkey = new kplus.Deployment(this, 'valkey', {
       metadata: {
+        name: 'valkey',
         namespace: namespace.name,
       },
       replicas: 1,
@@ -107,6 +113,7 @@ export class SeanceChart extends Chart {
     // Landing page deployment (Vite dev server)
     const landing = new kplus.Deployment(this, 'landing', {
       metadata: {
+        name: 'landing',
         namespace: namespace.name,
       },
       replicas: 1,
@@ -139,6 +146,7 @@ export class SeanceChart extends Chart {
     // NOTE: This assumes you have an ingress controller installed (we'll use nginx)
     const ingress = new kplus.Ingress(this, 'seance-ingress', {
       metadata: {
+        name: 'seance-ingress',
         namespace: namespace.name,
         annotations: {
           'nginx.ingress.kubernetes.io/ssl-redirect': 'true',

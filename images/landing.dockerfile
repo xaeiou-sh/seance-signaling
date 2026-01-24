@@ -4,13 +4,13 @@ FROM node:22-alpine
 WORKDIR /app
 
 # Copy package files first for better caching
-COPY landing-page/package*.json ./
+COPY package*.json ./
 
 # Install dependencies
 RUN npm install
 
 # Copy source code
-COPY landing-page/ .
+COPY . .
 
 # Expose Vite dev server port
 EXPOSE 5928

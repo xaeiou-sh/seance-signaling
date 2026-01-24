@@ -69,6 +69,10 @@
     # For cloud deploys
     opentofu
     ansible
+    # Kubernetes local development
+    kind
+    kubectl
+    tilt
   ];
 
   # https://devenv.sh/languages/
@@ -158,6 +162,19 @@
     echo "Restart devenv to start fresh."
   '';
 
+  # Kubernetes development scripts
+  scripts.k8s-setup.exec = ''
+    echo "☸️  Setting up Kubernetes local development environment..."
+    echo ""
+    cd kubernetes && ./setup.sh
+  '';
+
+  scripts.k8s-dev.exec = ''
+    echo "☸️  Starting Kubernetes development with Tilt..."
+    echo ""
+    cd kubernetes && tilt up
+  '';
+
   scripts.trust-caddy-ca.exec = ''
     echo "🔒 Installing Caddy CA certificate..."
     echo ""
@@ -207,6 +224,11 @@
     echo "  1. Copy .env.example to .env (secrets managed by secretspec)"
     echo "  2. Trust Caddy CA: run trust-caddy-ca"
     echo "  3. Start services: devenv up"
+    echo ""
+    echo "☸️  Kubernetes Development (kubernetes-migration branch):"
+    echo "  k8s-setup  - One-time Kubernetes setup (kind cluster + ingress)"
+    echo "  k8s-dev    - Start Kubernetes development with Tilt"
+    echo "  See kubernetes/README.md for details"
     echo ""
     echo "⚠️  Authentication temporarily disabled - auth infrastructure archived"
   '';
