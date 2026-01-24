@@ -26,8 +26,12 @@ export const CONFIG = {
 
   // Container images
   images: {
-    backend: ENVIRONMENT === 'dev' ? 'seance-backend:dev' : 'seance-backend:latest',
-    landing: ENVIRONMENT === 'dev' ? 'seance-landing:dev' : 'seance-landing:latest',
+    backend: ENVIRONMENT === 'dev'
+      ? 'seance-backend:dev'
+      : `fractalhuman1/seance-backend:${process.env.GIT_COMMIT || 'latest'}`,
+    landing: ENVIRONMENT === 'dev'
+      ? 'seance-landing:dev'
+      : `fractalhuman1/seance-landing:${process.env.GIT_COMMIT || 'latest'}`,
     // External images (same for all environments)
     signaling: 'funnyzak/y-webrtc-signaling:latest',
     valkey: 'valkey/valkey:latest',
@@ -51,7 +55,7 @@ export const CONFIG = {
 
   // Let's Encrypt email for certificate expiration notifications
   // TODO: Update this email before running tofu apply for production
-  letsencryptEmail: 'your-email@example.com',
+  letsencryptEmail: 'admin@seance.dev',
 
   // Kubernetes namespace
   namespace: ENVIRONMENT === 'dev' ? 'seance' : 'seance-prod',

@@ -175,6 +175,11 @@
     echo ""
     cd kubernetes && tilt up
   '';
+  scripts.k8s-deploy.exec = ''
+    echo "☸️  Deploying Kubernetes to cloud."
+    echo ""
+    cd kubernetes && tilt up
+  '';
   scripts.k8s-clean.exec = ''
     echo "☸️  Deleting all exsiting kubernetes cluster info"
     echo ""
