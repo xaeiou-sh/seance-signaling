@@ -104,47 +104,32 @@ app.use(cookieParser());
 app.use(express.json({ limit: '500mb' })); // For large deployments
 app.use(express.urlencoded({ extended: true }));
 
-// Load configuration from config.yml
+// Load configuration from environment variables
 function loadConfig() {
-  try {
-    const configPath = join(process.cwd(), '..', 'config.yml');
-    if (!existsSync(configPath)) {
-      throw new Error(`config.yml not found at ${configPath}`);
-    }
+  const builderKeyHashesEnv = process.env.BUILDER_KEY_HASHES;
 
-    const configContent = readFileSync(configPath, 'utf-8');
-    const lines = configContent.split('\n');
-
-    let inBuilderKeyHashes = false;
-    const builderKeyHashes: string[] = [];
-
-    for (const line of lines) {
-      if (line.trim() === 'builder_key_hashes:') {
-        inBuilderKeyHashes = true;
-        continue;
-      }
-
-      if (inBuilderKeyHashes) {
-        if (line.length > 0 && !line.startsWith(' ') && !line.startsWith('\t')) {
-          break;
-        }
-
-        const match = line.match(/^\s*-\s+"?([a-f0-9]{64})"?/);
-        if (match) {
-          builderKeyHashes.push(match[1].trim());
-        }
-      }
-    }
-
-    if (builderKeyHashes.length === 0) {
-      throw new Error('No builder_key_hashes found in config.yml');
-    }
-
-    return { builderKeyHashes };
-  } catch (error) {
-    console.error('[Config] Failed to load config.yml:', error);
-    throw error;
+  if (!builderKeyHashesEnv) {
+    throw new Error('BUILDER_KEY_HASHES environment variable is required');
   }
+
+  // Parse comma-separated list of SHA-256 hashes
+  const builderKeyHashes = builderKeyHashesEnv
+    .split(',')
+    .map(hash => hash.trim())
+    .filter(hash => hash.length > 0);
+
+  if (builderKeyHashes.length === 0) {
+    throw new Error('BUILDER_KEY_HASHES must contain at least one hash');
+  }
+
+  // Validate that all hashes are valid SHA-256 (64 hex characters)
+  for (const hash of builderKeyHashes) {
+    if (!/^[a-f0-9]{64}$/i.test(hash)) {
+      throw new Error(`Invalid SHA-256 hash in BUILDER_KEY_HASHES: ${hash}`);
+    }
+  }
+
+  return { builderKeyHashes };
 }
 
 const config = loadConfig();

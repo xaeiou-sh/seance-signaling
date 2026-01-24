@@ -72,6 +72,16 @@ if [ ! -d "node_modules" ]; then
 else
   echo "✓ Dependencies already installed"
 fi
+
+echo ""
+echo "📥 Importing cert-manager Helm chart..."
+if [ ! -d "imports" ]; then
+  npx cdk8s import helm:https://charts.jetstack.io/cert-manager@v1.16.2
+  echo "✓ cert-manager imported"
+else
+  echo "✓ cert-manager already imported"
+fi
+
 cd ..
 
 echo ""
@@ -85,10 +95,16 @@ echo "✅ Setup complete!"
 echo ""
 echo "🚀 Next steps:"
 echo "  1. Start development: tilt up"
+echo "     (cert-manager + app will be deployed automatically via cdk8s)"
 echo "  2. Open Tilt UI: http://localhost:10350"
-echo "  3. Access services:"
-echo "     - Marketing: http://dev.localhost"
-echo "     - Backend: http://backend.dev.localhost"
-echo "     - App: http://app.dev.localhost"
+echo "  3. Access services (HTTPS with self-signed certs):"
+echo "     - Marketing: https://dev.localhost"
+echo "     - Backend: https://backend.dev.localhost"
+echo "     - App: https://app.dev.localhost"
+echo ""
+echo "⚠️  Browser warnings: You'll see SSL warnings because certs are self-signed."
+echo "    Click 'Advanced' → 'Proceed to localhost' to bypass."
+echo ""
+echo "📜 TLS managed by cert-manager (deployed via cdk8s Helm integration)"
 echo ""
 echo "📚 See README.md for more details"

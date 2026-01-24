@@ -35,20 +35,42 @@ docker_build(
 local_resource(
   'cdk8s-synth',
   cmd='cd cdk8s && npm run synth',
-  deps=['cdk8s/src'],
+  deps=['cdk8s/src', 'cdk8s/imports'],
   labels=['infrastructure'],
 )
 
-# Apply the generated manifests
+# Apply cert-manager first (CRDs + controllers)
+k8s_yaml('./cdk8s/dist/cert-manager.k8s.yaml')
+
+# Configure cert-manager resources
+k8s_resource(
+  'cert-manager',
+  labels=['infrastructure'],
+)
+
+k8s_resource(
+  'cert-manager-webhook',
+  labels=['infrastructure'],
+)
+
+k8s_resource(
+  'cert-manager-cainjector',
+  labels=['infrastructure'],
+)
+
+# Apply seance resources after cert-manager is ready
+# Note: First apply may fail if webhook isn't ready - Tilt will auto-retry
 k8s_yaml('./cdk8s/dist/seance.k8s.yaml')
 
 # Port forwards for local access
+# All app resources depend on cert-manager being ready (for ClusterIssuers)
 k8s_resource(
   'backend',
   port_forwards=[
     '8765:8765',  # Backend API
   ],
   labels=['backend'],
+  resource_deps=['cert-manager', 'cert-manager-webhook'],
 )
 
 k8s_resource(
@@ -57,6 +79,7 @@ k8s_resource(
     '5928:5928',  # Vite HMR
   ],
   labels=['frontend'],
+  resource_deps=['cert-manager', 'cert-manager-webhook'],
 )
 
 k8s_resource(
@@ -65,6 +88,7 @@ k8s_resource(
     '4444:4444',  # WebRTC signaling
   ],
   labels=['infrastructure'],
+  resource_deps=['cert-manager', 'cert-manager-webhook'],
 )
 
 k8s_resource(
@@ -73,6 +97,7 @@ k8s_resource(
     '6379:6379',  # Redis
   ],
   labels=['infrastructure'],
+  resource_deps=['cert-manager', 'cert-manager-webhook'],
 )
 
 # Ingress is automatically applied from the manifest
@@ -81,7 +106,7 @@ k8s_resource(
 print("""
 🔮 Seance Kubernetes Development
 
-Local URLs (via Ingress):
+Local URLs (via Ingress with TLS):
   Marketing: https://dev.localhost
   Backend: https://backend.dev.localhost
   App: https://app.dev.localhost
@@ -92,11 +117,10 @@ Direct access (port-forward):
   Signaling: ws://localhost:4444
   Valkey: localhost:6379
 
+⚠️  Self-signed certificates: Your browser will show security warnings.
+    Click 'Advanced' → 'Proceed to localhost' to continue.
+
 First time setup:
-  1. Install kind: brew install kind
-  2. Install kubectl: brew install kubectl
-  3. Install Tilt: brew install tilt
-  4. Create cluster: kind create cluster --config kind-config.yaml
-  5. Install ingress: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-  6. Run: tilt up
+  Run: ./setup.sh
+  Then: tilt up
 """)

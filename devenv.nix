@@ -73,6 +73,7 @@
     kind
     kubectl
     tilt
+    cdk8s-cli
   ];
 
   # https://devenv.sh/languages/
@@ -174,7 +175,11 @@
     echo ""
     cd kubernetes && tilt up
   '';
-
+  scripts.k8s-clean.exec = ''
+    echo "☸️  Deleting all exsiting kubernetes cluster info"
+    echo ""
+    kind delete cluster --name seance-local
+  '';
   scripts.trust-caddy-ca.exec = ''
     echo "🔒 Installing Caddy CA certificate..."
     echo ""
