@@ -43,28 +43,25 @@ if ! docker info | grep -q "Username: $DOCKER_USERNAME"; then
   docker login
 fi
 
-# Build backend image
-echo "🏗️  Building backend image..."
-docker build \
+# Build and push backend image (cross-compile for linux/amd64)
+echo "🏗️  Building and pushing backend image for linux/amd64..."
+docker buildx build \
+  --platform linux/amd64 \
   -f "$REPO_ROOT/images/backend.dockerfile" \
   -t "$DOCKER_USERNAME/seance-backend:$GIT_COMMIT" \
   -t "$DOCKER_USERNAME/seance-backend:latest" \
+  --push \
   "$REPO_ROOT/backend-trpc"
 
-# Build landing page image
-echo "🏗️  Building landing page image..."
-docker build \
+# Build and push landing page image (cross-compile for linux/amd64)
+echo "🏗️  Building and pushing landing page image for linux/amd64..."
+docker buildx build \
+  --platform linux/amd64 \
   -f "$REPO_ROOT/images/landing.dockerfile" \
   -t "$DOCKER_USERNAME/seance-landing:$GIT_COMMIT" \
   -t "$DOCKER_USERNAME/seance-landing:latest" \
+  --push \
   "$REPO_ROOT/landing-page"
-
-# Push to Docker Hub
-echo "⬆️  Pushing images to Docker Hub..."
-docker push "$DOCKER_USERNAME/seance-backend:$GIT_COMMIT"
-docker push "$DOCKER_USERNAME/seance-backend:latest"
-docker push "$DOCKER_USERNAME/seance-landing:$GIT_COMMIT"
-docker push "$DOCKER_USERNAME/seance-landing:latest"
 
 # Regenerate Kubernetes manifests with git commit hash
 echo "🔧 Regenerating Kubernetes manifests..."
