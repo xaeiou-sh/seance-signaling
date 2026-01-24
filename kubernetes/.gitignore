@@ -1,0 +1,9 @@
+# CDK8s generated manifests
+manifests/
+
+# Node modules
+cdk8s/node_modules/
+cdk8s/dist/
+
+# Tilt build cache
+.tilt-cache/

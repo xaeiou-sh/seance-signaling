@@ -1,0 +1,105 @@
+# Tilt configuration for Seance local development
+# This gives us hot reload in Kubernetes - the best of both worlds
+
+# Ensure we're using the local kind cluster
+allow_k8s_contexts('kind-seance-local')
+
+# Build backend image with live reload
+docker_build(
+  'seance-backend',
+  context='../backend-trpc',
+  dockerfile='../images/backend.dockerfile',
+  live_update=[
+    # Sync source files for hot reload
+    sync('../backend-trpc/src', '/app/src'),
+    sync('../backend-trpc/package.json', '/app/package.json'),
+    # Restart the process when package.json changes
+    run('cd /app && npm install', trigger=['../backend-trpc/package.json']),
+  ],
+)
+
+# Build landing page image with Vite HMR
+docker_build(
+  'seance-landing',
+  context='../landing-page',
+  dockerfile='../images/landing.dockerfile',
+  live_update=[
+    sync('../landing-page/src', '/app/src'),
+    sync('../landing-page/index.html', '/app/index.html'),
+    sync('../landing-page/package.json', '/app/package.json'),
+    run('cd /app && npm install', trigger=['../landing-page/package.json']),
+  ],
+)
+
+# Generate k8s manifests from cdk8s
+local_resource(
+  'cdk8s-synth',
+  cmd='cd cdk8s && npm run synth',
+  deps=['cdk8s/src'],
+  labels=['infrastructure'],
+)
+
+# Apply the generated manifests
+k8s_yaml('./cdk8s/dist/seance.k8s.yaml')
+
+# Port forwards for local access
+k8s_resource(
+  'backend',
+  port_forwards=[
+    '8765:8765',  # Backend API
+  ],
+  labels=['backend'],
+)
+
+k8s_resource(
+  'landing',
+  port_forwards=[
+    '5928:5928',  # Vite HMR
+  ],
+  labels=['frontend'],
+)
+
+k8s_resource(
+  'signaling',
+  port_forwards=[
+    '4444:4444',  # WebRTC signaling
+  ],
+  labels=['infrastructure'],
+)
+
+k8s_resource(
+  'valkey',
+  port_forwards=[
+    '6379:6379',  # Redis
+  ],
+  labels=['infrastructure'],
+)
+
+# Display URLs in Tilt UI
+k8s_resource(
+  'seance-ingress',
+  labels=['routing'],
+)
+
+print("""
+🔮 Seance Kubernetes Development
+
+Local URLs (via Ingress):
+  Marketing: https://dev.localhost
+  Backend: https://backend.dev.localhost
+  App: https://app.dev.localhost
+
+Direct access (port-forward):
+  Backend: http://localhost:8765
+  Landing: http://localhost:5928
+  Signaling: ws://localhost:4444
+  Valkey: localhost:6379
+
+First time setup:
+  1. Install kind: brew install kind
+  2. Install kubectl: brew install kubectl
+  3. Install Tilt: brew install tilt
+  4. Create cluster: kind create cluster --config kind-config.yaml
+  5. Install ingress: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+  6. Run: tilt up
+""")
