@@ -1,13 +1,13 @@
 // Seance Backend Server
 // Serves desktop app updates + web app
 
-// Disable SSL verification in development for .localhost domains
-// This is safe because .localhost domains are local-only
-const isDevelopment = process.env.ZITADEL_ISSUER?.includes('.localhost') ?? false;
-if (isDevelopment) {
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-  console.log('[Dev] SSL verification disabled for .localhost domains');
-}
+// ARCHIVED: SSL verification workaround for Zitadel auth
+// Auth system temporarily disabled
+// const isDevelopment = process.env.ZITADEL_ISSUER?.includes('.localhost') ?? false;
+// if (isDevelopment) {
+//   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+//   console.log('[Dev] SSL verification disabled for .localhost domains');
+// }
 
 import express from 'express';
 import cors from 'cors';
@@ -99,8 +99,8 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (re
 });
 
 // Middleware
-app.use(cors({ credentials: true, origin: true })); // Allow credentials for Zitadel auth cookies
-app.use(cookieParser()); // Parse Zitadel access token cookies
+app.use(cors({ credentials: true, origin: true }));
+app.use(cookieParser());
 app.use(express.json({ limit: '500mb' })); // For large deployments
 app.use(express.urlencoded({ extended: true }));
 
@@ -348,123 +348,17 @@ app.get('/updates/darwin-arm64/download-latest', (req, res) => {
     .send(fileData);
 });
 
-// OIDC Callback endpoint
-app.get('/auth/callback', async (req, res) => {
-  const { code } = req.query;
-
-  if (!code || typeof code !== 'string') {
-    res.status(400).send('Missing authorization code');
-    return;
-  }
-
-  const issuer = process.env.ZITADEL_ISSUER;
-  const clientId = process.env.ZITADEL_CLIENT_ID;
-  const clientSecret = process.env.ZITADEL_CLIENT_SECRET;
-
-  if (!issuer || !clientId || !clientSecret) {
-    res.status(500).send('OIDC not configured. Please set ZITADEL_ISSUER, CLIENT_ID, and CLIENT_SECRET.');
-    return;
-  }
-
-  try {
-    // Use environment variable for redirect URI to ensure it matches what frontend sent
-    // Fallback to constructing from request if not set
-    const redirectUri = process.env.BACKEND_URL
-      ? `${process.env.BACKEND_URL}/auth/callback`
-      : `${req.protocol}://${req.get('host')}/auth/callback`;
-
-    console.log('[Auth] Exchanging code for token, redirect_uri:', redirectUri);
-
-    // Exchange authorization code for tokens
-    // This is just a simple POST request - no library needed
-    const tokenResponse = await fetch(`${issuer}/oauth/v2/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
-      },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        code: code,
-        redirect_uri: redirectUri,
-      }),
-    });
-
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      throw new Error(`Token exchange failed: ${tokenResponse.status} ${errorText}`);
-    }
-
-    const tokens = await tokenResponse.json();
-    const accessToken = tokens.access_token;
-    const idToken = tokens.id_token;
-
-    console.log('[Auth] Received tokens:', {
-      hasAccessToken: !!accessToken,
-      hasIdToken: !!idToken,
-      hasRefreshToken: !!tokens.refresh_token,
-    });
-
-    if (!accessToken) {
-      throw new Error('No access token received from Zitadel');
-    }
-
-    // Use ID token for cookie if available (contains user claims like email)
-    // Otherwise fall back to access token
-    const tokenForCookie = idToken || accessToken;
-
-    // Get cookie domain (strip 'backend.' from hostname)
-    const host = req.get('host') || '';
-    const cookieDomain = host.replace('backend.', '');
-
-    console.log('[Auth] Setting cookies for domain:', cookieDomain);
-
-    // Store ID token in httpOnly cookie (contains user claims like email)
-    // ID tokens are JWTs that can be validated with JWKS
-    res.cookie('seance_token', tokenForCookie, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      domain: cookieDomain,
-      maxAge: (tokens.expires_in || 3600) * 1000,
-      path: '/',
-    });
-
-    // Store refresh token if present
-    if (tokens.refresh_token) {
-      res.cookie('seance_refresh_token', tokens.refresh_token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'lax',
-        domain: cookieDomain,
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-        path: '/',
-      });
-    }
-
-    console.log('[Auth] User logged in successfully, redirecting to dashboard');
-
-    // Redirect to dashboard
-    res.redirect(`https://${cookieDomain}/dashboard`);
-  } catch (error) {
-    console.error('[Auth] OAuth callback error:', error);
-    res.status(500).send('Authentication failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
-  }
-});
-
-// Logout endpoint
-app.post('/auth/logout', (req, res) => {
-  const host = req.get('host') || '';
-  const cookieDomain = host.replace('backend.', '');
-
-  // Clear auth cookies
-  res.clearCookie('seance_token', { domain: cookieDomain, path: '/' });
-  res.clearCookie('seance_refresh_token', { domain: cookieDomain, path: '/' });
-
-  console.log('[Auth] User logged out');
-
-  res.json({ success: true });
-});
+// ARCHIVED: OIDC authentication endpoints
+// Self-hosted auth moved to /archive directory
+// These endpoints are disabled until auth is reimplemented
+//
+// app.get('/auth/callback', async (req, res) => {
+//   res.status(501).send('Authentication temporarily disabled');
+// });
+//
+// app.post('/auth/logout', (req, res) => {
+//   res.status(501).send('Authentication temporarily disabled');
+// });
 
 // Register tRPC
 registerTRPC(app, {

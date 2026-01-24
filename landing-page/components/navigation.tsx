@@ -4,10 +4,13 @@ import { Download, User } from "lucide-react";
 import { Button } from "./ui/button";
 import { downloadButtonStyle, getStartedButtonStyle } from "@/components/buttons/ButtonStyles";
 import { posthog } from "@/lib/posthog";
-import { useAuth } from "@/lib/auth-context";
+// ARCHIVED: Auth disabled
+// import { useAuth } from "@/lib/auth-context";
 
 export const Navigation = () => {
-  const { isAuthenticated, user } = useAuth();
+  // ARCHIVED: Auth disabled - always show unauthenticated state
+  const isAuthenticated = false;
+  const user = null as any;
 
   const handleDownloadNavClick = () => {
     posthog.capture('download_nav_clicked', {

@@ -1,5 +1,5 @@
 // tRPC initialization and procedure definitions
-import { initTRPC, TRPCError } from '@trpc/server';
+import { initTRPC } from '@trpc/server';
 import type { OpenApiMeta } from 'trpc-to-openapi';
 import type { Context } from './context';
 
@@ -9,37 +9,24 @@ const t = initTRPC.meta<OpenApiMeta>().context<Context>().create();
 export const router = t.router;
 export const publicProcedure = t.procedure;
 
-// Middleware to check if user is authenticated
+// ARCHIVED: Authentication temporarily disabled
+// Self-hosted auth moved to /archive directory
+// These procedures are now equivalent to publicProcedure until auth is reimplemented
+
+// Stubbed auth middleware - always allows access (no auth enforcement)
 const isAuthed = t.middleware(({ ctx, next }) => {
-  if (!ctx.user) {
-    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
-  }
-  return next({
-    ctx: {
-      ...ctx,
-      user: ctx.user, // Now TypeScript knows user is not null
-    },
-  });
+  // Auth disabled - always allow access
+  return next({ ctx });
 });
 
-// Middleware to check if user is an admin
+// Stubbed admin middleware - always allows access (no auth enforcement)
 const isAdmin = t.middleware(({ ctx, next }) => {
-  if (!ctx.user) {
-    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
-  }
-  if (!ctx.user.groups.includes('admins')) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
-  }
-  return next({
-    ctx: {
-      ...ctx,
-      user: ctx.user,
-    },
-  });
+  // Auth disabled - always allow access
+  return next({ ctx });
 });
 
-// Protected procedure that requires authentication
+// Protected procedure (currently no protection - auth disabled)
 export const protectedProcedure = t.procedure.use(isAuthed);
 
-// Admin procedure that requires admin group membership
+// Admin procedure (currently no protection - auth disabled)
 export const adminProcedure = t.procedure.use(isAdmin);

@@ -1,13 +1,15 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Heart, Settings } from "lucide-react";
-import { useAuth } from "@/lib/auth-context";
+// ARCHIVED: Auth disabled
+// import { useAuth } from "@/lib/auth-context";
 import { trpc } from "@/lib/trpc";
 import { posthog } from "@/lib/posthog";
 
 export const SubscriptionSection = () => {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  // ARCHIVED: Auth disabled
+  const isAuthenticated = false;
 
   const subscriptionQuery = trpc.stripe.getSubscriptionStatus.useQuery(undefined, {
     enabled: isAuthenticated,

@@ -3,10 +3,14 @@ import { Navigate, Link } from "react-router-dom";
 import { Navigation } from "@/components/navigation";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/lib/auth-context";
+// ARCHIVED: Auth disabled
+// import { useAuth } from "@/lib/auth-context";
 
 export default function Dashboard() {
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  // ARCHIVED: Auth disabled
+  const user = null as any;
+  const isAuthenticated = false;
+  const authLoading = false;
 
   // Query current user to verify token is still valid
   const { data: currentUser, isLoading, error } = trpc.auth.me.useQuery(undefined, {

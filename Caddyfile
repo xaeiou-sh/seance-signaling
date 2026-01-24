@@ -7,22 +7,23 @@
 	# Automatic HTTPS is enabled by default for all domains
 }
 
-# Zitadel OIDC authentication server
-{$AUTH_DOMAIN} {
-	reverse_proxy localhost:8080 {
-		header_up Host {host}
-		header_up X-Real-IP {remote_host}
-		header_up X-Forwarded-For {remote_host}
-		header_up X-Forwarded-Proto {scheme}
-		header_up X-Forwarded-Host {host}
-		header_up X-Forwarded-Port 443
-	}
-
-	log {
-		output stderr
-		format console
-	}
-}
+# ARCHIVED: Zitadel OIDC authentication server
+# Auth infrastructure disabled - moved to /archive
+# {$AUTH_DOMAIN} {
+# 	reverse_proxy localhost:8080 {
+# 		header_up Host {host}
+# 		header_up X-Real-IP {remote_host}
+# 		header_up X-Forwarded-For {remote_host}
+# 		header_up X-Forwarded-Proto {scheme}
+# 		header_up X-Forwarded-Host {host}
+# 		header_up X-Forwarded-Port 443
+# 	}
+#
+# 	log {
+# 		output stderr
+# 		format console
+# 	}
+# }
 
 # Backend domain (set by CADDY_DOMAIN env var)
 {$CADDY_DOMAIN} {

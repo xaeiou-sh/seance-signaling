@@ -1,13 +1,14 @@
 // Main tRPC router - combines all sub-routers
 import { router } from './trpc';
 import { healthRouter } from './routers/health';
-import { authRouter } from './routers/auth';
+// ARCHIVED: Auth router moved to /archive
+// import { authRouter } from './routers/auth';
 import { downloadsRouter } from './routers/downloads';
 import { stripeRouter } from './routers/stripe';
 
 export const appRouter = router({
   health: healthRouter,
-  auth: authRouter,
+  // auth: authRouter, // ARCHIVED: Auth disabled
   downloads: downloadsRouter,
   stripe: stripeRouter,
 });

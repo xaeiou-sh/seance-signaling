@@ -3,9 +3,10 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Home from "@/pages/Home";
 import Download from "@/pages/Download";
 import Checkout from "@/pages/Checkout";
-import Login from "@/pages/Login";
-import Signup from "@/pages/Signup";
-import Signout from "@/pages/Signout";
+// ARCHIVED: Auth pages moved to /archive
+// import Login from "@/pages/Login";
+// import Signup from "@/pages/Signup";
+// import Signout from "@/pages/Signout";
 import Dashboard from "@/pages/Dashboard";
 import TestTRPC from "@/pages/TestTRPC";
 import PleaseSupport from "@/pages/PleaseSupport";
@@ -20,9 +21,10 @@ function AppRoutes() {
       <Route path="/" element={<Home />} />
       <Route path="/download" element={<Download />} />
       <Route path="/checkout" element={<Checkout />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<Signup />} />
-      <Route path="/signout" element={<Signout />} />
+      {/* ARCHIVED: Auth routes disabled */}
+      {/* <Route path="/login" element={<Login />} /> */}
+      {/* <Route path="/signup" element={<Signup />} /> */}
+      {/* <Route path="/signout" element={<Signout />} /> */}
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/test-trpc" element={<TestTRPC />} />
       <Route path="/please-support" element={<PleaseSupport />} />

@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Download as DownloadIcon } from "lucide-react";
 import { FaApple, FaLinux, FaWindows } from "react-icons/fa";
 import { posthog } from "@/lib/posthog";
-import { useAuth } from "@/lib/auth-context";
+// ARCHIVED: Auth disabled
+// import { useAuth } from "@/lib/auth-context";
 import { trpc } from "@/lib/trpc";
 
 type OS = "mac" | "linux" | "windows" | "unknown";
@@ -30,7 +31,9 @@ const detectOS = (): OS => {
 
 export default function Download() {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading } = useAuth();
+  // ARCHIVED: Auth disabled
+  const isAuthenticated = false;
+  const isLoading = false;
   const [os, setOs] = useState<OS>("unknown");
   const [downloading, setDownloading] = useState(false);
 

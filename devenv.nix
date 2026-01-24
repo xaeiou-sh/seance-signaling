@@ -4,9 +4,12 @@
   config,
   inputs,
   ...
-}: let
-  postgresModule = import ./postgres.nix {inherit pkgs lib config;};
-in {
+}:
+# ARCHIVED: PostgreSQL + Zitadel auth infrastructure moved to /archive/auth.nix
+# let
+#   postgresModule = import ./postgres.nix {inherit pkgs lib config;};
+# in
+{
   dotenv.enable = true;
   # https://devenv.sh/basics/
   # Note: dotenv is handled by secretspec - see devenv.yaml and secretspec.toml
@@ -60,8 +63,9 @@ in {
     git
     nodejs_22
     caddy
-    zitadel
-    postgresql_17
+    # ARCHIVED: Auth infrastructure removed
+    # zitadel
+    # postgresql_17
     # For cloud deploys
     opentofu
     ansible
@@ -98,62 +102,8 @@ in {
       npm run dev -- --port ${config.env.VITE_DEV_PORT} --host 0.0.0.0
     '';
   };
-  # Zitadel OIDC authentication server
-  # Native binary using PostgreSQL backend
-  processes.zitadel = {
-    process-compose = {
-      depends_on.postgres.condition = "process_healthy";
-      environment = [
-        # Zitadel configuration via environment variables
-        ''ZITADEL_EXTERNALDOMAIN=${config.env.AUTH_DOMAIN}''
-        ''ZITADEL_EXTERNALPORT=443''
-        ''ZITADEL_EXTERNALSECURE=true''
-        ''ZITADEL_TLS_ENABLED=false''
-        ''ZITADEL_PORT=8080''
-        # Master key from secretspec (must be 32 bytes)
-        ''ZITADEL_MASTERKEY=${config.secretspec.secrets.ZITADEL_MASTERKEY or "MasterkeyNeedsToHave32Characters"}''
-        ''ZITADEL_DATABASE_POSTGRES_HOST=localhost''
-        ''ZITADEL_DATABASE_POSTGRES_PORT=5432''
-        ''ZITADEL_DATABASE_POSTGRES_DATABASE=zitadel''
-        ''ZITADEL_DATABASE_POSTGRES_USER_USERNAME=zitadel''
-        # Postgres password from secretspec
-        ''ZITADEL_DATABASE_POSTGRES_USER_PASSWORD=${config.secretspec.secrets.POSTGRES_PASSWORD or "zitadel_dev_password"}''
-        ''ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE=disable''
-        ''ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME=zitadel''
-        # Postgres admin password from secretspec
-        ''ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD=${config.secretspec.secrets.POSTGRES_PASSWORD or "zitadel_dev_password"}''
-        ''ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE=disable''
-        ''ZITADEL_FIRSTINSTANCE_ORG_NAME="Seance"''
-        # Use email as username to avoid domain suffix (admin@org.domain)
-        # Must use valid email format - .localhost is not accepted by Zitadel
-        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME=admin@dev.localhost''
-        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD=ChangeThisPassword123!''
-        # Correct variable name is EMAIL_ADDRESS (not EMAIL)
-        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS=admin@seance.dev''
-        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED=true''
-        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME="Admin"''
-        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME="User"''
-        # Correct variable name has no underscores between CHANGE and REQUIRED
-        ''ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED=false''
-        # Disable domain suffix on login names
-        ''ZITADEL_DEFAULTINSTANCE_DOMAINPOLICY_USERLOGINMUSTBEDOMAIN=false''
-        # Create machine user for API automation
-        ''ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME=seance-automation''
-        ''ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME=Seance Automation''
-        ''ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINEKEY_TYPE=1''
-        ''ZITADEL_FIRSTINSTANCE_MACHINEKEYPATH=.state/zitadel/machine-key.json''
-        # Generate a PAT for the machine user (expires in 9999)
-        ''ZITADEL_FIRSTINSTANCE_PATPATH=.state/zitadel/pat.txt''
-        ''ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE=9999-12-31T23:59:59Z''
-      ];
-    };
-    exec = ''
-      mkdir -p .state/zitadel
-
-
-      ${lib.getExe pkgs.zitadel} start-from-init --masterkeyFromEnv
-    '';
-  };
+  # ARCHIVED: Zitadel process moved to /archive/auth.nix
+  # Authentication temporarily disabled
   # Valkey (Redis fork) for session storage
   # Run as a process instead of service for better control over data location
   processes.valkey = {
@@ -169,9 +119,8 @@ in {
     '';
   };
 
-  # PostgreSQL for Zitadel - imported from postgres.nix
-  # Handles running as root by delegating to postgres user
-  processes.postgres = postgresModule.postgres;
+  # ARCHIVED: PostgreSQL process moved to /archive/auth.nix
+  # processes.postgres = postgresModule.postgres;
 
   # https://devenv.sh/scripts/
   scripts.hello.exec = ''
@@ -184,56 +133,14 @@ in {
     echo "Done!"
   '';
 
-  scripts.check-zitadel-admin.exec = ''
-    echo "🔍 Checking Zitadel admin user..."
-    echo ""
-    psql -h localhost -p 5432 -U zitadel -d zitadel -c "SELECT u.username, u.state, h.is_email_verified, h.password_change_required, n.password_set, h.email FROM projections.users14 u JOIN projections.users14_humans h ON u.id = h.user_id JOIN projections.users14_notifications n ON u.id = n.user_id ORDER BY u.creation_date LIMIT 1;" 2>&1
-    echo ""
-    echo "Login with the username shown above at https://auth.dev.localhost/ui/console"
-    echo "Password: ChangeThisPassword123!"
-  '';
-
-  scripts.setup-zitadel-app.exec = ''
-    ${pkgs.bash}/bin/bash ./scripts/setup-zitadel-app.sh
-  '';
-
-  scripts.clear-zitadel.exec = ''
-    echo "🧹 Clearing Zitadel data..."
-    echo ""
-    echo "WARNING: This will delete all Zitadel users, projects, and configuration!"
-    echo "Press Ctrl+C to cancel, or Enter to continue..."
-    read
-
-    # Clear Zitadel state directory
-    if [ -d .state/zitadel ]; then
-      rm -rf .state/zitadel
-      echo "✓ Cleared Zitadel state directory"
-    fi
-
-    # Drop and recreate Zitadel database
-    if [ -d .state/postgres ]; then
-      echo "✓ Dropping zitadel database..."
-      dropdb -h localhost -p 5432 zitadel 2>/dev/null || true
-      echo "✓ Recreating zitadel database..."
-      createdb -h localhost -p 5432 -O zitadel zitadel
-    fi
-
-    echo ""
-    echo "✅ Zitadel data cleared!"
-    echo "Restart devenv to reinitialize Zitadel."
-  '';
+  # ARCHIVED: Zitadel scripts moved to /archive/auth.nix
+  # scripts.check-zitadel-admin - authentication disabled
+  # scripts.setup-zitadel-app - authentication disabled
+  # scripts.clear-zitadel - authentication disabled
 
   scripts.clear-data.exec = ''
     echo "🧹 Clearing all application data..."
     echo ""
-
-    # Clear Zitadel data
-    if [ -d .state/zitadel ]; then
-      rm -rf .state/zitadel
-      echo "✓ Cleared Zitadel state directory"
-    else
-      echo "✓ Zitadel state directory already clean"
-    fi
 
     # Clear Valkey data directory (session storage)
     if [ -d .state/valkey ]; then
@@ -243,13 +150,8 @@ in {
       echo "✓ Valkey data directory already clean"
     fi
 
-    # Clear PostgreSQL data directory
-    if [ -d .state/postgres ]; then
-      rm -rf .state/postgres
-      echo "✓ Cleared PostgreSQL data directory"
-    else
-      echo "✓ PostgreSQL data directory already clean"
-    fi
+    # ARCHIVED: Zitadel and PostgreSQL data clearing removed
+    # Authentication infrastructure disabled
 
     echo ""
     echo "✅ All application data cleared!"
@@ -290,17 +192,13 @@ in {
     echo "  devenv up                  - Start all services (local dev)"
     echo "  devenv --profile prod up   - Start all services (production domains)"
     echo "  cleanup-docker             - Remove leftover Docker containers"
-    echo "  clear-data                 - Clear all application data (Zitadel, Redis sessions)"
-    echo "  clear-zitadel              - Clear only Zitadel data (users, projects, etc.)"
-    echo "  check-zitadel-admin        - Show the admin username and login details"
-    echo "  setup-zitadel-app          - Create OIDC app and get CLIENT_ID/SECRET (run once)"
+    echo "  clear-data                 - Clear all application data (Redis sessions)"
     echo ""
     echo "🌐 Local URLs (HTTPS via Caddy):"
     echo "  Marketing: https://dev.localhost  (Vite with hot reload)"
     echo "  Backend: https://backend.dev.localhost  (tsx watch with hot reload)"
     echo "  App: https://app.dev.localhost"
     echo "  Swagger UI: https://backend.dev.localhost/ui"
-    echo "  Zitadel: https://auth.dev.localhost  (Auth server, admin: ChangeThisPassword123!)"
     echo "  Signaling: wss://backend.dev.localhost/signaling"
     echo ""
     echo "💡 Same setup for dev and production - just different domains!"
@@ -309,8 +207,8 @@ in {
     echo "  1. Copy .env.example to .env (secrets managed by secretspec)"
     echo "  2. Trust Caddy CA: run trust-caddy-ca"
     echo "  3. Start services: devenv up"
-    echo "  4. Run setup-zitadel-app to auto-create OIDC app (writes to .env)"
-    echo "  5. Restart devenv to load new credentials from .env"
+    echo ""
+    echo "⚠️  Authentication temporarily disabled - auth infrastructure archived"
   '';
 
   # https://devenv.sh/tasks/

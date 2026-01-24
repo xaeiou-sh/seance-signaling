@@ -5,13 +5,16 @@ import { HeroBackground } from "@/components/HeroBackground";
 import { CursorOverlay } from "@/components/CursorOverlay";
 import { Button } from "@/components/ui/button";
 import { Heart, Check } from "lucide-react";
-import { useAuth } from "@/lib/auth-context";
+// ARCHIVED: Auth disabled
+// import { useAuth } from "@/lib/auth-context";
 import { trpc } from "@/lib/trpc";
 import { posthog } from "@/lib/posthog";
 
 export default function Checkout() {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading } = useAuth();
+  // ARCHIVED: Auth disabled
+  const isAuthenticated = false;
+  const isLoading = false;
 
   const subscriptionQuery = trpc.stripe.getSubscriptionStatus.useQuery(undefined, {
     enabled: isAuthenticated,
