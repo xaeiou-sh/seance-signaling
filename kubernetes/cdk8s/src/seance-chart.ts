@@ -309,24 +309,15 @@ export class SeanceChart extends Chart {
       },
     });
 
-    // Create LiteLLM service
-    new ApiObject(this, 'litellm-service', {
-      apiVersion: 'v1',
-      kind: 'Service',
+    // Create LiteLLM service using kplus for ingress compatibility
+    const litellmService = new kplus.Service(this, 'litellm-service', {
       metadata: {
         name: 'litellm-service',
         namespace: namespace.name,
       },
-      spec: {
-        selector: {
-          app: 'litellm',
-        },
-        ports: [{
-          port: CONFIG.ports.litellm,
-          targetPort: CONFIG.ports.litellm,
-        }],
-        type: 'ClusterIP',
-      },
+      type: kplus.ServiceType.CLUSTER_IP,
+      selector: kplus.Pods.select(this, 'litellm-pods', { labels: { app: 'litellm' } }),
+      ports: [{ port: CONFIG.ports.litellm, targetPort: CONFIG.ports.litellm }],
     });
 
     // Landing page deployment (Vite dev server in dev, built static site in prod)
@@ -372,6 +363,31 @@ export class SeanceChart extends Chart {
       serviceType: kplus.ServiceType.CLUSTER_IP,
     });
 
+    // Explicit Certificate resource for ALL seance.dev domains
+    // This ensures cert-manager creates ONE certificate with all domains as SANs
+    new ApiObject(this, 'seance-certificate', {
+      apiVersion: 'cert-manager.io/v1',
+      kind: 'Certificate',
+      metadata: {
+        name: 'seance-tls',
+        namespace: namespace.name,
+      },
+      spec: {
+        secretName: CONFIG.tls.secretName,
+        issuerRef: {
+          name: CONFIG.tls.issuer,
+          kind: 'ClusterIssuer',
+          group: 'cert-manager.io',
+        },
+        dnsNames: [
+          CONFIG.backendDomain,
+          CONFIG.appDomain,
+          CONFIG.marketingDomain,
+          CONFIG.litellmDomain,
+        ],
+      },
+    });
+
     // Ingress for routing with TLS
     const ingress = new kplus.Ingress(this, 'seance-ingress', {
       className: 'nginx',
@@ -382,62 +398,18 @@ export class SeanceChart extends Chart {
           // Nginx ingress annotations
           'nginx.ingress.kubernetes.io/ssl-redirect': 'true',
           'nginx.ingress.kubernetes.io/force-ssl-redirect': 'true',
-          // cert-manager will automatically create certificates for this ingress
-          'cert-manager.io/cluster-issuer': CONFIG.tls.issuer,
+          // No cert-manager annotation - certificate is explicitly created above
         },
       },
     });
 
-    // Add TLS configuration if enabled
-    if (CONFIG.tls.enabled) {
-      ingress.addTls([
-        {
-          hosts: [CONFIG.backendDomain, CONFIG.appDomain, CONFIG.marketingDomain],
-          secret: kplus.Secret.fromSecretName(this, 'tls-secret', CONFIG.tls.secretName),
-        },
-      ]);
-    }
-
-    // LiteLLM ingress (separate subdomain)
-    new ApiObject(this, 'litellm-ingress', {
-      apiVersion: 'networking.k8s.io/v1',
-      kind: 'Ingress',
-      metadata: {
-        name: 'litellm-ingress',
-        namespace: namespace.name,
-        annotations: {
-          'nginx.ingress.kubernetes.io/ssl-redirect': 'true',
-          'nginx.ingress.kubernetes.io/force-ssl-redirect': 'true',
-          'cert-manager.io/cluster-issuer': CONFIG.tls.issuer,
-        },
+    // Add TLS configuration
+    ingress.addTls([
+      {
+        hosts: [CONFIG.backendDomain, CONFIG.appDomain, CONFIG.marketingDomain, CONFIG.litellmDomain],
+        secret: kplus.Secret.fromSecretName(this, 'tls-secret', CONFIG.tls.secretName),
       },
-      spec: {
-        ingressClassName: 'nginx',
-        ...(CONFIG.tls.enabled && {
-          tls: [{
-            hosts: [CONFIG.litellmDomain],
-            secretName: CONFIG.tls.secretName,
-          }],
-        }),
-        rules: [{
-          host: CONFIG.litellmDomain,
-          http: {
-            paths: [{
-              path: '/',
-              pathType: 'Prefix',
-              backend: {
-                service: {
-                  name: 'litellm-service',
-                  port: {
-                    number: CONFIG.ports.litellm,
-                  },
-                },
-              },
-            }],
-          },
-        }],
-      },
-    });
+    ]);
 
     // Signaling routes (must come before backend routes for proper path matching)
     ingress.addHostRule(CONFIG.backendDomain, '/signaling',
@@ -464,6 +436,13 @@ export class SeanceChart extends Chart {
     ingress.addHostRule(CONFIG.marketingDomain, '/',
       kplus.IngressBackend.fromService(landingService, {
         port: CONFIG.ports.landing,
+      })
+    );
+
+    // LiteLLM routes
+    ingress.addHostRule(CONFIG.litellmDomain, '/',
+      kplus.IngressBackend.fromService(litellmService, {
+        port: CONFIG.ports.litellm,
       })
     );
   }

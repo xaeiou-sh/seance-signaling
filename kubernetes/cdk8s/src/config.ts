@@ -60,7 +60,6 @@ export const CONFIG = {
 
   // TLS configuration
   tls: {
-    enabled: true,
     // Only prod uses Let's Encrypt (requires public domains)
     // Dev and local use self-signed certs (.localhost domains)
     issuer: ENVIRONMENT === 'prod' ? 'letsencrypt-prod' : 'selfsigned-issuer',
