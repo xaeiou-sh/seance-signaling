@@ -39,6 +39,7 @@ export const CONFIG = {
   get backendDomain() { return `backend.${this.baseDomain}`; },
   get appDomain() { return `app.${this.baseDomain}`; },
   get marketingDomain() { return this.baseDomain; },
+  get litellmDomain() { return `litellm.${this.baseDomain}`; },
 
   // Container images
   images: {

@@ -28,13 +28,13 @@
   scripts.k8s-setup.exec = ''
     echo "☸️  Setting up Kubernetes local development environment..."
     echo ""
-    cd kubernetes && ./setup.sh
+    cd ${config.git.root}/kubernetes && ./setup.sh
   '';
 
   scripts.k8s-dev.exec = ''
     echo "☸️  Starting Kubernetes development with Tilt..."
     echo ""
-    cd kubernetes && tilt up
+    cd ${config.git.root}/kubernetes && ./dev.sh
   '';
 
   scripts.k8s-deploy.exec = ''

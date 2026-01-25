@@ -85,17 +85,11 @@ fi
 cd ..
 
 echo ""
-echo "🎯 Generating initial Kubernetes manifests (dev environment)..."
-cd cdk8s
-SEANCE_ENV=dev npm run synth
-cd ..
-
-echo ""
 echo "✅ Setup complete!"
 echo ""
 echo "🚀 Next steps:"
-echo "  1. Start development: tilt up"
-echo "     (cert-manager + app will be deployed automatically via cdk8s)"
+echo "  1. Start development: k8s-dev"
+echo "     (manifests will be synthesized and applied automatically)"
 echo "  2. Open Tilt UI: http://localhost:10350"
 echo "  3. Access services (HTTPS with self-signed certs):"
 echo "     - Marketing: https://dev.localhost"

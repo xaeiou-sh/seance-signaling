@@ -121,39 +121,19 @@ data "kubernetes_service" "nginx_ingress" {
 # DEPLOY KUBERNETES MANIFESTS
 # ============================================================================
 
-# Apply cert-manager manifests (CRDs + controllers)
-resource "null_resource" "apply_cert_manager" {
+# Apply Kubernetes manifests using shared script
+# This ensures dev and prod use identical deployment logic
+resource "null_resource" "apply_manifests" {
   triggers = {
-    manifest_sha = filesha256("${path.module}/kubernetes/cdk8s/dist/cert-manager.k8s.yaml")
+    cert_manager_sha = filesha256("${path.module}/kubernetes/cdk8s/dist/cert-manager.k8s.yaml")
+    seance_sha       = filesha256("${path.module}/kubernetes/cdk8s/dist/seance.k8s.yaml")
   }
 
   provisioner "local-exec" {
     command = <<-EOT
       export KUBECONFIG=${path.module}/.kube/config
-      kubectl apply -f ${path.module}/kubernetes/cdk8s/dist/cert-manager.k8s.yaml
-
-      # Wait for cert-manager webhook to be ready
-      kubectl wait --for=condition=available --timeout=300s \
-        deployment/cert-manager-webhook -n cert-manager
-    EOT
-  }
-
-  depends_on = [
-    digitalocean_kubernetes_cluster.seance,
-    local_file.kubeconfig,
-  ]
-}
-
-# Apply seance application manifests (after cert-manager is ready)
-resource "null_resource" "apply_seance" {
-  triggers = {
-    manifest_sha = filesha256("${path.module}/kubernetes/cdk8s/dist/seance.k8s.yaml")
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      export KUBECONFIG=${path.module}/.kube/config
-      kubectl apply -f ${path.module}/kubernetes/cdk8s/dist/seance.k8s.yaml
+      export WAIT_TIMEOUT=300
+      ${path.module}/kubernetes/apply-manifests.sh
 
       # Wait for deployments to be ready
       kubectl wait --for=condition=available --timeout=300s \
@@ -163,7 +143,8 @@ resource "null_resource" "apply_seance" {
   }
 
   depends_on = [
-    null_resource.apply_cert_manager,
+    digitalocean_kubernetes_cluster.seance,
+    local_file.kubeconfig,
     helm_release.nginx_ingress,
   ]
 }
@@ -203,6 +184,15 @@ resource "cloudflare_record" "root" {
 resource "cloudflare_record" "auth" {
   zone_id = var.cloudflare_zone_id
   name    = "auth"
+  content = data.kubernetes_service.nginx_ingress.status[0].load_balancer[0].ingress[0].ip
+  type    = "A"
+  ttl     = 1
+  proxied = false
+}
+
+resource "cloudflare_record" "litellm" {
+  zone_id = var.cloudflare_zone_id
+  name    = "litellm"
   content = data.kubernetes_service.nginx_ingress.status[0].load_balancer[0].ingress[0].ip
   type    = "A"
   ttl     = 1
@@ -285,6 +275,11 @@ output "root_domain" {
 output "auth_domain" {
   description = "Auth domain"
   value       = cloudflare_record.auth.hostname
+}
+
+output "litellm_domain" {
+  description = "LiteLLM domain"
+  value       = cloudflare_record.litellm.hostname
 }
 
 output "kubeconfig_path" {

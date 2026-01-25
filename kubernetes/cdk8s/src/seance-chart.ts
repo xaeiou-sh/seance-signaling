@@ -2,6 +2,8 @@ import { Chart, ChartProps, ApiObject, Size } from 'cdk8s';
 import { Construct } from 'constructs';
 import * as kplus from 'cdk8s-plus-30';
 import { CONFIG } from './config';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export class SeanceChart extends Chart {
   constructor(scope: Construct, id: string, props: ChartProps = {}) {
@@ -211,9 +213,27 @@ export class SeanceChart extends Chart {
       serviceType: kplus.ServiceType.CLUSTER_IP,
     });
 
+    // LiteLLM ConfigMap with model configuration
+    const litellmConfigContent = fs.readFileSync(
+      path.join(__dirname, '../litellm-config.yaml'),
+      'utf-8'
+    );
+
+    new ApiObject(this, 'litellm-config', {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      metadata: {
+        name: 'litellm-config',
+        namespace: namespace.name,
+      },
+      data: {
+        'config.yaml': litellmConfigContent,
+      },
+    });
+
     // LiteLLM proxy deployment (unified LLM API gateway)
     // Note: Uses lower-level API to mount all secrets as environment variables
-    const litellmDeployment = new ApiObject(this, 'litellm', {
+    new ApiObject(this, 'litellm', {
       apiVersion: 'apps/v1',
       kind: 'Deployment',
       metadata: {
@@ -237,6 +257,14 @@ export class SeanceChart extends Chart {
             containers: [{
               name: 'litellm',
               image: CONFIG.images.litellm,
+              command: ['litellm'],
+              args: [
+                '--config',
+                '/app/config.yaml',
+                '--port',
+                CONFIG.ports.litellm.toString(),
+                '--detailed_debug',
+              ],
               ports: [{
                 containerPort: CONFIG.ports.litellm,
               }],
@@ -251,10 +279,10 @@ export class SeanceChart extends Chart {
                 },
               },
               env: [
-                // Set the port
+                // Proxy base URL - tells LiteLLM what URL it's accessible at
                 {
-                  name: 'PORT',
-                  value: CONFIG.ports.litellm.toString(),
+                  name: 'LITELLM_PROXY_BASE_URL',
+                  value: `https://${CONFIG.litellmDomain}`,
                 },
               ],
               // Mount ALL secrets from seance-secrets as environment variables
@@ -264,6 +292,17 @@ export class SeanceChart extends Chart {
                   name: 'seance-secrets',
                 },
               }],
+              volumeMounts: [{
+                name: 'config',
+                mountPath: '/app/config.yaml',
+                subPath: 'config.yaml',
+              }],
+            }],
+            volumes: [{
+              name: 'config',
+              configMap: {
+                name: 'litellm-config',
+              },
             }],
           },
         },
@@ -271,7 +310,7 @@ export class SeanceChart extends Chart {
     });
 
     // Create LiteLLM service
-    const litellmService = new ApiObject(this, 'litellm-service', {
+    new ApiObject(this, 'litellm-service', {
       apiVersion: 'v1',
       kind: 'Service',
       metadata: {
@@ -359,9 +398,8 @@ export class SeanceChart extends Chart {
       ]);
     }
 
-    // LiteLLM ingress with path rewriting
-    // Separate ingress needed for rewrite-target annotation
-    const litellmIngress = new ApiObject(this, 'litellm-ingress', {
+    // LiteLLM ingress (separate subdomain)
+    new ApiObject(this, 'litellm-ingress', {
       apiVersion: 'networking.k8s.io/v1',
       kind: 'Ingress',
       metadata: {
@@ -371,26 +409,22 @@ export class SeanceChart extends Chart {
           'nginx.ingress.kubernetes.io/ssl-redirect': 'true',
           'nginx.ingress.kubernetes.io/force-ssl-redirect': 'true',
           'cert-manager.io/cluster-issuer': CONFIG.tls.issuer,
-          // Rewrite /litellm/* to /* when forwarding to LiteLLM
-          'nginx.ingress.kubernetes.io/rewrite-target': '/$2',
-          // Use regex to capture path after /litellm
-          'nginx.ingress.kubernetes.io/use-regex': 'true',
         },
       },
       spec: {
         ingressClassName: 'nginx',
         ...(CONFIG.tls.enabled && {
           tls: [{
-            hosts: [CONFIG.backendDomain],
+            hosts: [CONFIG.litellmDomain],
             secretName: CONFIG.tls.secretName,
           }],
         }),
         rules: [{
-          host: CONFIG.backendDomain,
+          host: CONFIG.litellmDomain,
           http: {
             paths: [{
-              path: '/litellm(/|$)(.*)',
-              pathType: 'ImplementationSpecific',
+              path: '/',
+              pathType: 'Prefix',
               backend: {
                 service: {
                   name: 'litellm-service',

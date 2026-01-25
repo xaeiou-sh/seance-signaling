@@ -62,27 +62,61 @@ For prod:
 ./scripts/deploy-production.sh
 ```
 
+## Available Models
+
+The following custom models are configured:
+
+- **seance-oss-large**: MiniMax-M2 via OpenRouter (high throughput)
+- **seance-oss-medium**: GPT-OSS-120B via OpenRouter (high throughput)
+
+These models are defined in `kubernetes/cdk8s/litellm-config.yaml`.
+
 ## Usage
 
 ### API Endpoints
 
 LiteLLM provides an OpenAI-compatible API:
 
-- `/litellm/v1/chat/completions` - Chat completions
-- `/litellm/v1/completions` - Text completions
-- `/litellm/v1/embeddings` - Embeddings
-- `/litellm/health` - Health check
+- `/v1/chat/completions` - Chat completions
+- `/v1/completions` - Text completions
+- `/v1/embeddings` - Embeddings
+- `/health` - Health check
+- `/model/info` - List available models
 
-### Example Request
+### Example Requests
 
+Using the custom seance-oss-large model:
 ```bash
-curl https://backend.seance.dev/litellm/v1/chat/completions \
+curl https://litellm.seance.dev/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -d '{
-    "model": "gpt-4",
+    "model": "seance-oss-large",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
+```
+
+Using the custom seance-oss-medium model:
+```bash
+curl https://litellm.seance.dev/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  -d '{
+    "model": "seance-oss-medium",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+### Testing Models
+
+Run the test script to verify all models are working:
+```bash
+# For dev environment
+export LITELLM_MASTER_KEY=$(sops -d secrets/secrets.yaml | grep LITELLM_MASTER_KEY | cut -d: -f2 | xargs)
+./kubernetes/test-litellm-models.sh
+
+# For production
+./kubernetes/test-litellm-models.sh prod
 ```
 
 ## Configuration
@@ -92,14 +126,34 @@ LiteLLM is configured with:
 - **Port**: 4000 (internal)
 - **Replicas**: 1
 - **Resources**: 250m-1000m CPU, 512Mi-1Gi memory
+- **Config File**: `kubernetes/cdk8s/litellm-config.yaml` (mounted as ConfigMap)
 
-To configure models, you can create a ConfigMap with a LiteLLM config file, or use environment variables in the deployment.
+### Adding New Models
 
-## Path Rewriting
+To add new models, edit `kubernetes/cdk8s/litellm-config.yaml`:
 
-The ingress automatically rewrites paths:
-- `https://backend.seance.dev/litellm/v1/chat/completions` → `http://litellm-service:4000/v1/chat/completions`
-- This is handled by the separate `litellm-ingress` with nginx rewrite rules
+```yaml
+model_list:
+  - model_name: my-custom-model
+    litellm_params:
+      model: openrouter/provider/model-name
+      api_key: os.environ/OPENROUTER_API_KEY
+```
+
+Then regenerate and deploy:
+```bash
+cd kubernetes/cdk8s
+npm run synth
+kubectl apply -f dist/seance.k8s.yaml -n seance
+```
+
+## Routing
+
+LiteLLM is exposed on a separate subdomain:
+- Dev: `https://litellm.dev.localhost`
+- Prod: `https://litellm.seance.dev`
+
+Requests are routed directly to the litellm-service without path rewriting.
 
 ## Troubleshooting
 
