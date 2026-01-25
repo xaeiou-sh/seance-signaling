@@ -270,12 +270,12 @@ export class SeanceChart extends Chart {
               }],
               resources: {
                 requests: {
-                  cpu: '250m',
-                  memory: '512Mi',
+                  cpu: '100m',
+                  memory: '128Mi',
                 },
                 limits: {
-                  cpu: '1000m',
-                  memory: '1024Mi',
+                  cpu: '500m',
+                  memory: '256Mi',
                 },
               },
               env: [
@@ -363,32 +363,9 @@ export class SeanceChart extends Chart {
       serviceType: kplus.ServiceType.CLUSTER_IP,
     });
 
-    // Explicit Certificate resource for ALL seance.dev domains
-    // This ensures cert-manager creates ONE certificate with all domains as SANs
-    new ApiObject(this, 'seance-certificate', {
-      apiVersion: 'cert-manager.io/v1',
-      kind: 'Certificate',
-      metadata: {
-        name: 'seance-tls',
-        namespace: namespace.name,
-      },
-      spec: {
-        secretName: CONFIG.tls.secretName,
-        issuerRef: {
-          name: CONFIG.tls.issuer,
-          kind: 'ClusterIssuer',
-          group: 'cert-manager.io',
-        },
-        dnsNames: [
-          CONFIG.backendDomain,
-          CONFIG.appDomain,
-          CONFIG.marketingDomain,
-          CONFIG.litellmDomain,
-        ],
-      },
-    });
-
     // Ingress for routing with TLS
+    // cert-manager's ingress-shim will automatically create/update the Certificate
+    // based on the TLS section below - no manual certificate management needed
     const ingress = new kplus.Ingress(this, 'seance-ingress', {
       className: 'nginx',
       metadata: {
@@ -398,7 +375,8 @@ export class SeanceChart extends Chart {
           // Nginx ingress annotations
           'nginx.ingress.kubernetes.io/ssl-redirect': 'true',
           'nginx.ingress.kubernetes.io/force-ssl-redirect': 'true',
-          // No cert-manager annotation - certificate is explicitly created above
+          // cert-manager ingress-shim will auto-create Certificate from TLS section
+          'cert-manager.io/cluster-issuer': CONFIG.tls.issuer,
         },
       },
     });

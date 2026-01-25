@@ -11,14 +11,14 @@ WORKDIR /app
 COPY landing-page/package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy backend types for tRPC (needed for TypeScript path mapping @backend/*)
 # Place at ../backend-trpc relative to /app to match local dev structure
 COPY backend-trpc ../backend-trpc
 
 # Copy landing page source
-COPY landing-page .
+COPY landing-page ./
 
 # Build the static files (VITE_BACKEND_URL will be embedded)
 RUN npm run build

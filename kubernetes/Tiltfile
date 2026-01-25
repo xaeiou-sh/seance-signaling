@@ -11,8 +11,8 @@ k8s_yaml('./cdk8s/dist/seance.k8s.yaml')
 # Build backend image with live reload
 docker_build(
   'seance-backend:dev',
-  context='../backend-trpc',
-  dockerfile='../images/backend.dockerfile',
+  context='..',  # Repo root to access shared code
+  dockerfile='../backend-trpc/Dockerfile.dev',
   live_update=[
     sync('../backend-trpc/src', '/app/src'),
     sync('../backend-trpc/package.json', '/app/package.json'),
@@ -23,8 +23,8 @@ docker_build(
 # Build landing page image with Vite HMR
 docker_build(
   'seance-landing:dev',
-  context='../landing-page',
-  dockerfile='../images/landing.dev.dockerfile',
+  context='..',  # Repo root to access backend types
+  dockerfile='../landing-page/Dockerfile.dev',
   live_update=[
     sync('../landing-page/src', '/app/src'),
     sync('../landing-page/index.html', '/app/index.html'),

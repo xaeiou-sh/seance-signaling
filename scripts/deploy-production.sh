@@ -44,22 +44,23 @@ if ! docker info | grep -q "Username: $DOCKER_USERNAME"; then
 fi
 
 # Build and push backend image (cross-compile for linux/amd64)
+# Build context is repo root to allow access to shared code if needed
 echo "🏗️  Building and pushing backend image for linux/amd64..."
 docker buildx build \
   --platform linux/amd64 \
-  -f "$REPO_ROOT/images/backend.dockerfile" \
+  -f "$REPO_ROOT/backend-trpc/Dockerfile" \
   -t "$DOCKER_USERNAME/seance-backend:$GIT_COMMIT" \
   -t "$DOCKER_USERNAME/seance-backend:latest" \
   --push \
-  "$REPO_ROOT/backend-trpc"
+  "$REPO_ROOT"
 
 # Build and push landing page image (cross-compile for linux/amd64)
-# Build context is repo root to access both landing-page and backend-trpc
+# Build context is repo root to access both landing-page and backend-trpc for tRPC types
 echo "🏗️  Building and pushing landing page image for linux/amd64..."
 docker buildx build \
   --platform linux/amd64 \
   --build-arg VITE_BACKEND_URL=https://backend.seance.dev \
-  -f "$REPO_ROOT/images/landing.dockerfile" \
+  -f "$REPO_ROOT/landing-page/Dockerfile" \
   -t "$DOCKER_USERNAME/seance-landing:$GIT_COMMIT" \
   -t "$DOCKER_USERNAME/seance-landing:latest" \
   --push \

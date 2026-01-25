@@ -43,7 +43,8 @@ export const CONFIG = {
 
   // Container images
   images: {
-    // Dev uses local images with Vite dev server, local/prod use production builds
+    // Dev: Local images with dev servers (tsx for backend, Vite for landing)
+    // Prod: Production builds from Docker Hub (compiled Node for backend, nginx for landing)
     backend: prodOrDev(
       `fractalhuman1/seance-backend:${process.env.GIT_COMMIT || 'latest'}`,
       'seance-backend:dev'
