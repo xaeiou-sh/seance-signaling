@@ -22,6 +22,12 @@ if ! command -v sops &> /dev/null; then
   exit 1
 fi
 
+if ! command -v yq &> /dev/null; then
+  echo "Error: yq is not installed" >&2
+  echo "Install with: nix-env -iA nixpkgs.yq-go" >&2
+  exit 1
+fi
+
 if [ ! -f "$AGE_KEY_FILE" ]; then
   echo "Error: Age key not found: $AGE_KEY_FILE" >&2
   echo "Copy your age key to $AGE_KEY_FILE" >&2
@@ -30,11 +36,15 @@ fi
 
 echo "🔓 Decrypting secrets from $SECRETS_FILE..." >&2
 
-# Set age key location and decrypt secrets
+# Set age key location
 export SOPS_AGE_KEY_FILE="$AGE_KEY_FILE"
 
-# Decrypt and export as environment variables
-# Parse YAML key: value format and convert to KEY=value for export
-eval "$(sops -d "$SECRETS_FILE" | grep -v '^#' | sed 's/: /=/' | sed 's/^/export /')"
+# Decrypt and export all secrets as environment variables
+# Iterates through all top-level keys (stripe, litellm, etc.) and their nested keys
+while IFS='=' read -r key value; do
+  if [[ -n "$key" ]] && [[ -n "$value" ]]; then
+    export "$key"="$value"
+  fi
+done < <(sops -d "$SECRETS_FILE" | yq eval '.[] | to_entries | .[] | .key + "=" + .value' -)
 
 echo "✓ Secrets loaded" >&2

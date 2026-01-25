@@ -222,16 +222,30 @@ For Kubernetes deployments, secrets are managed separately from manifests using 
 - **Security**: Generated Kubernetes manifests contain NO secret values
 - **Documentation**: See `secrets/README.md` for complete guide
 
+**Structure:**
+Secrets are organized by service for clarity:
+```yaml
+stripe:
+  STRIPE_SECRET_KEY: sk_live_...
+  STRIPE_PRICE_ID: price_...
+
+litellm:
+  LITELLM_MASTER_KEY: sk-...
+  OPENAI_API_KEY: sk-...
+  ANTHROPIC_API_KEY: sk-ant-...
+```
+
 **How it works:**
 1. Secrets encrypted with SOPS+age in `secrets/secrets.yaml`
-2. Deployment script decrypts and applies to cluster: `kubectl create secret`
-3. Kubernetes manifests only reference the secret via `secretKeyRef`
-4. No secret values ever stored in git or generated YAML files
+2. Deployment script uses `yq` to extract all key-value pairs
+3. All keys are flattened and applied to cluster: `kubectl create secret`
+4. Kubernetes manifests only reference secrets via `secretKeyRef`
+5. No secret values ever stored in git or generated YAML files
 
 **Quick setup:**
 ```bash
-# Install SOPS
-nix-env -iA nixpkgs.sops
+# Install dependencies
+nix-env -iA nixpkgs.sops nixpkgs.yq-go
 
 # Edit secrets (auto-encrypts on save)
 sops secrets/secrets.yaml

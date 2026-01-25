@@ -39,13 +39,21 @@ Edit secrets:
 sops secrets/secrets.yaml
 ```
 
-Ensure production secrets are set correctly:
-- `STRIPE_SECRET_KEY`: Your Stripe secret key (sk_live_...)
-- `STRIPE_PRICE_ID`: Your Stripe price ID (price_...)
+The secrets file is organized by service. Ensure production secrets are set:
+```yaml
+stripe:
+  STRIPE_SECRET_KEY: sk_live_...  # Your Stripe secret key
+  STRIPE_PRICE_ID: price_...  # Your Stripe price ID
+
+litellm:
+  LITELLM_MASTER_KEY: sk-...  # Generate with: echo "sk-$(openssl rand -hex 32)"
+  OPENAI_API_KEY: sk-...  # Optional: Your OpenAI API key
+  ANTHROPIC_API_KEY: sk-ant-...  # Optional: Your Anthropic API key
+```
 
 Builder key hashes are already hardcoded in the backend code.
 
-See `secrets/README.md` for complete documentation.
+See `secrets/README.md` and `kubernetes/LITELLM.md` for complete documentation.
 
 **2. Update Let's Encrypt Email**
 

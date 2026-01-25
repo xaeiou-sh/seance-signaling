@@ -32,17 +32,11 @@ docker_build(
 )
 
 # Generate k8s manifests from cdk8s (dev environment)
+# Secrets are decrypted and embedded in manifest at synth time
 local_resource(
   'cdk8s-synth',
   cmd='cd cdk8s && SEANCE_ENV=dev npm run synth',
-  deps=['cdk8s/src', 'cdk8s/imports'],
-  labels=['infrastructure'],
-)
-
-# Apply secrets to dev cluster (managed separately from manifests)
-local_resource(
-  'apply-secrets',
-  cmd='./scripts/apply-secrets.sh seance',
+  deps=['cdk8s/src', 'cdk8s/imports', '../secrets/secrets.yaml'],
   labels=['infrastructure'],
 )
 
@@ -94,6 +88,12 @@ k8s_resource(
   resource_deps=['cert-manager', 'cert-manager-webhook'],
 )
 
+k8s_resource(
+  'litellm',
+  labels=['infrastructure'],
+  resource_deps=['cert-manager', 'cert-manager-webhook'],
+)
+
 # Ingress is automatically applied from the manifest
 # No need to manage it separately in Tilt
 
@@ -104,6 +104,7 @@ Access via Ingress with TLS:
   Marketing: https://dev.localhost
   Backend: https://backend.dev.localhost
   App: https://app.dev.localhost
+  LiteLLM: https://backend.dev.localhost/litellm
 
 ⚠️  Self-signed certificates: Your browser will show security warnings.
     Click 'Advanced' → 'Proceed to localhost' to continue.

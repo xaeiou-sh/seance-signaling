@@ -1,6 +1,8 @@
 // Seance Kubernetes Configuration
 // To deploy to a different environment, change ENVIRONMENT and run: npm run synth
 
+import { loadSecrets, flattenSecrets } from './secrets';
+
 export type DeploymentEnvironment = 'dev' | 'local' | 'prod';
 
 // ============================================================================
@@ -85,6 +87,7 @@ export const CONFIG = {
     landing: 1,
     signaling: 1,
     valkey: 1,
+    litellm: 1,
   },
 
   // Service ports
@@ -93,6 +96,7 @@ export const CONFIG = {
     landing: 80,
     signaling: 4444,
     valkey: 6379,
+    litellm: 4000,
   },
 
   // Environment-specific behavior flags
@@ -115,4 +119,10 @@ export const CONFIG = {
       landing: undefined,
     }
   ),
+
+  // Secrets - loaded from SOPS-encrypted file at synth time
+  // Decrypted and parsed as TypeScript object for type-safe access
+  get secrets() {
+    return flattenSecrets(loadSecrets());
+  },
 } as const;
