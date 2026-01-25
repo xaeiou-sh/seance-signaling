@@ -1,4 +1,4 @@
-import { Chart, ChartProps, ApiObject } from 'cdk8s';
+import { Chart, ChartProps, ApiObject, Size } from 'cdk8s';
 import { Construct } from 'constructs';
 import * as kplus from 'cdk8s-plus-30';
 import { CONFIG } from './config';
@@ -73,6 +73,16 @@ export class SeanceChart extends Chart {
           name: 'backend',
           image: CONFIG.images.backend,
           portNumber: CONFIG.ports.backend,
+          resources: {
+            cpu: {
+              request: kplus.Cpu.millis(500),
+              limit: kplus.Cpu.millis(500),
+            },
+            memory: {
+              request: Size.mebibytes(512),
+              limit: Size.mebibytes(512),
+            },
+          },
           envVariables: {
             PORT: kplus.EnvValue.fromValue(CONFIG.ports.backend.toString()),
             DEV_MODE: kplus.EnvValue.fromValue(CONFIG.devMode.toString()),
@@ -116,6 +126,16 @@ export class SeanceChart extends Chart {
           name: 'signaling',
           image: CONFIG.images.signaling,
           portNumber: CONFIG.ports.signaling,
+          resources: {
+            cpu: {
+              request: kplus.Cpu.millis(250),
+              limit: kplus.Cpu.millis(500),
+            },
+            memory: {
+              request: Size.mebibytes(256),
+              limit: Size.mebibytes(512),
+            },
+          },
           envVariables: {
             PORT: kplus.EnvValue.fromValue(CONFIG.ports.signaling.toString()),
           },
@@ -128,7 +148,7 @@ export class SeanceChart extends Chart {
     });
 
     // Signaling service
-    signaling.exposeViaService({
+    const signalingService = signaling.exposeViaService({
       name: 'signaling-service',
       ports: [{ port: CONFIG.ports.signaling, targetPort: CONFIG.ports.signaling }],
       serviceType: kplus.ServiceType.CLUSTER_IP,
@@ -146,6 +166,16 @@ export class SeanceChart extends Chart {
           name: 'valkey',
           image: CONFIG.images.valkey,
           portNumber: CONFIG.ports.valkey,
+          resources: {
+            cpu: {
+              request: kplus.Cpu.millis(200),
+              limit: kplus.Cpu.millis(500),
+            },
+            memory: {
+              request: Size.mebibytes(256),
+              limit: Size.mebibytes(512),
+            },
+          },
           args: CONFIG.devMode
             ? ['--save', '', '--appendonly', 'no']  // No persistence in dev
             : ['--save', '60', '1', '--appendonly', 'yes'],  // Persistence in prod
@@ -176,11 +206,20 @@ export class SeanceChart extends Chart {
           name: 'landing',
           image: CONFIG.images.landing,
           portNumber: CONFIG.ports.landing,
-          envVariables: {
-            VITE_DEV_PORT: kplus.EnvValue.fromValue(CONFIG.ports.landing.toString()),
-            VITE_BACKEND_URL: kplus.EnvValue.fromValue(`https://${CONFIG.backendDomain}`),
-            VITE_AUTH_DOMAIN: kplus.EnvValue.fromValue(`auth.${CONFIG.baseDomain}`),
+          resources: {
+            cpu: {
+              request: kplus.Cpu.millis(50),   // nginx is super light
+              limit: kplus.Cpu.millis(200),
+            },
+            memory: {
+              request: Size.mebibytes(64),     // nginx uses very little memory
+              limit: Size.mebibytes(128),
+            },
           },
+          // Environment variables (only needed for dev mode Vite server, not for prod static files)
+          envVariables: CONFIG.devMode ? {
+            VITE_BACKEND_URL: kplus.EnvValue.fromValue(`https://${CONFIG.backendDomain}`),
+          } : {},
           securityContext: {
             ensureNonRoot: false,
             readOnlyRootFilesystem: false,
@@ -198,6 +237,7 @@ export class SeanceChart extends Chart {
 
     // Ingress for routing with TLS
     const ingress = new kplus.Ingress(this, 'seance-ingress', {
+      className: 'nginx',
       metadata: {
         name: 'seance-ingress',
         namespace: namespace.name,
@@ -221,6 +261,13 @@ export class SeanceChart extends Chart {
       ]);
     }
 
+    // Signaling routes (must come before backend routes for proper path matching)
+    ingress.addHostRule(CONFIG.backendDomain, '/signaling',
+      kplus.IngressBackend.fromService(signalingService, {
+        port: CONFIG.ports.signaling,
+      })
+    );
+
     // Backend routes
     ingress.addHostRule(CONFIG.backendDomain, '/',
       kplus.IngressBackend.fromService(backendService, {
@@ -241,8 +288,5 @@ export class SeanceChart extends Chart {
         port: CONFIG.ports.landing,
       })
     );
-
-    // Path-based routing for signaling is handled by the backend
-    // Backend proxies /signaling to the signaling service internally
   }
 }

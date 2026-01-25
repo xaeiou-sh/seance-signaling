@@ -74,6 +74,7 @@
     kubectl
     tilt
     cdk8s-cli
+    doctl
   ];
 
   # https://devenv.sh/languages/

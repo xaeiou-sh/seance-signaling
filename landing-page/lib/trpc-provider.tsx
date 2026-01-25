@@ -20,9 +20,8 @@ function TRPCProviderInner({ children }: { children: React.ReactNode }) {
       links: [
         httpBatchLink({
           url: `${ENV.BACKEND_URL}/trpc`,
-          credentials: 'include',  // Include cookies for Authelia session
           headers() {
-            // No longer need JWT token - Authelia uses session cookies
+            // Auth disabled - no session cookies needed
             return {};
           },
         }),

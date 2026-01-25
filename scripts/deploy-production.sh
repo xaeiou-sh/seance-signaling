@@ -54,14 +54,16 @@ docker buildx build \
   "$REPO_ROOT/backend-trpc"
 
 # Build and push landing page image (cross-compile for linux/amd64)
+# Build context is repo root to access both landing-page and backend-trpc
 echo "🏗️  Building and pushing landing page image for linux/amd64..."
 docker buildx build \
   --platform linux/amd64 \
+  --build-arg VITE_BACKEND_URL=https://backend.seance.dev \
   -f "$REPO_ROOT/images/landing.dockerfile" \
   -t "$DOCKER_USERNAME/seance-landing:$GIT_COMMIT" \
   -t "$DOCKER_USERNAME/seance-landing:latest" \
   --push \
-  "$REPO_ROOT/landing-page"
+  "$REPO_ROOT"
 
 # Regenerate Kubernetes manifests with git commit hash
 echo "🔧 Regenerating Kubernetes manifests..."

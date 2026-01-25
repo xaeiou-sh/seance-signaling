@@ -18,11 +18,11 @@ docker_build(
   ],
 )
 
-# Build landing page image with Vite HMR
+# Build landing page image with Vite HMR (using dev dockerfile for local development)
 docker_build(
   'seance-landing',
   context='../landing-page',
-  dockerfile='../images/landing.dockerfile',
+  dockerfile='../images/landing.dev.dockerfile',
   live_update=[
     sync('../landing-page/src', '/app/src'),
     sync('../landing-page/index.html', '/app/index.html'),
@@ -62,40 +62,27 @@ k8s_resource(
 # Note: First apply may fail if webhook isn't ready - Tilt will auto-retry
 k8s_yaml('./cdk8s/dist/seance.k8s.yaml')
 
-# Port forwards for local access
 # All app resources depend on cert-manager being ready (for ClusterIssuers)
 k8s_resource(
   'backend',
-  port_forwards=[
-    '8765:8765',  # Backend API
-  ],
   labels=['backend'],
   resource_deps=['cert-manager', 'cert-manager-webhook'],
 )
 
 k8s_resource(
   'landing',
-  port_forwards=[
-    '5928:5928',  # Vite HMR
-  ],
   labels=['frontend'],
   resource_deps=['cert-manager', 'cert-manager-webhook'],
 )
 
 k8s_resource(
   'signaling',
-  port_forwards=[
-    '4444:4444',  # WebRTC signaling
-  ],
   labels=['infrastructure'],
   resource_deps=['cert-manager', 'cert-manager-webhook'],
 )
 
 k8s_resource(
   'valkey',
-  port_forwards=[
-    '6379:6379',  # Redis
-  ],
   labels=['infrastructure'],
   resource_deps=['cert-manager', 'cert-manager-webhook'],
 )
@@ -106,16 +93,10 @@ k8s_resource(
 print("""
 🔮 Seance Kubernetes Development
 
-Local URLs (via Ingress with TLS):
+Access via Ingress with TLS:
   Marketing: https://dev.localhost
   Backend: https://backend.dev.localhost
   App: https://app.dev.localhost
-
-Direct access (port-forward):
-  Backend: http://localhost:8765
-  Landing: http://localhost:5928
-  Signaling: ws://localhost:4444
-  Valkey: localhost:6379
 
 ⚠️  Self-signed certificates: Your browser will show security warnings.
     Click 'Advanced' → 'Proceed to localhost' to continue.

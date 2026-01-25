@@ -67,17 +67,18 @@ export const CONFIG = {
   },
 
   // Replica counts
+  // All set to 1 for now - main benefit is zero-downtime rolling updates
   replicas: {
-    backend: ENVIRONMENT === 'dev' ? 1 : 3,
-    landing: ENVIRONMENT === 'dev' ? 1 : 2,
-    signaling: ENVIRONMENT === 'dev' ? 1 : 2,
-    valkey: 1, // Never replicate Redis without proper clustering
+    backend: 1,
+    landing: 1,
+    signaling: 1,
+    valkey: 1,
   },
 
   // Service ports
   ports: {
     backend: 8765,
-    landing: 5928,
+    landing: 80,
     signaling: 4444,
     valkey: 6379,
   },
@@ -85,7 +86,7 @@ export const CONFIG = {
   // Environment-specific behavior flags
   devMode: ENVIRONMENT === 'dev',
 
-  // Resource limits (more generous in prod)
+  // Resource limits (conservative for 2-node s-2vcpu-2gb cluster)
   resources: ENVIRONMENT === 'dev'
     ? {
         // Dev: minimal resources for local kind cluster
@@ -93,8 +94,8 @@ export const CONFIG = {
         landing: { cpu: '250m', memory: '256Mi' },
       }
     : {
-        // Prod: higher limits for real traffic
-        backend: { cpu: '2000m', memory: '2Gi' },
-        landing: { cpu: '1000m', memory: '1Gi' },
+        // Prod: reasonable limits for 2-node cluster (4 vCPU, 4GB total)
+        backend: { cpu: '500m', memory: '512Mi' },
+        landing: { cpu: '250m', memory: '256Mi' },
       },
 } as const;
