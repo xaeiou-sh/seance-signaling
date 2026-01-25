@@ -80,6 +80,10 @@ echo "🚀 Deploying to Kubernetes..."
 tofu init -upgrade
 tofu apply
 
+# Apply secrets to cluster (managed separately from manifests)
+echo "🔐 Applying secrets to cluster..."
+"$REPO_ROOT/scripts/apply-secrets.sh" seance-prod
+
 # Show deployment info
 echo ""
 echo "✅ Deployment complete!"

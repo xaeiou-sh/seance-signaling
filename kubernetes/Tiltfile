@@ -39,6 +39,13 @@ local_resource(
   labels=['infrastructure'],
 )
 
+# Apply secrets to dev cluster (managed separately from manifests)
+local_resource(
+  'apply-secrets',
+  cmd='./scripts/apply-secrets.sh seance',
+  labels=['infrastructure'],
+)
+
 # Apply cert-manager first (CRDs + controllers)
 k8s_yaml('./cdk8s/dist/cert-manager.k8s.yaml')
 

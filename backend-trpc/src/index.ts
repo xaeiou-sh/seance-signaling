@@ -104,35 +104,25 @@ app.use(cookieParser());
 app.use(express.json({ limit: '500mb' })); // For large deployments
 app.use(express.urlencoded({ extended: true }));
 
-// Load configuration from environment variables
-function loadConfig() {
-  const builderKeyHashesEnv = process.env.BUILDER_KEY_HASHES;
+// Builder key hashes - SHA256 hashes of authorized builder public keys
+// These are hardcoded since they're public (hashes) and don't vary by environment
+// See config.yml for key generation instructions
+const BUILDER_KEY_HASHES = [
+  'adf1e1bee2a545ca24690755a59ea58af30cf9f86692541a6a932a75dc831334',
+];
 
-  if (!builderKeyHashesEnv) {
-    throw new Error('BUILDER_KEY_HASHES environment variable is required');
+// Validate hashes at startup
+for (const hash of BUILDER_KEY_HASHES) {
+  if (!/^[a-f0-9]{64}$/i.test(hash)) {
+    throw new Error(`Invalid SHA-256 hash in BUILDER_KEY_HASHES: ${hash}`);
   }
-
-  // Parse comma-separated list of SHA-256 hashes
-  const builderKeyHashes = builderKeyHashesEnv
-    .split(',')
-    .map(hash => hash.trim())
-    .filter(hash => hash.length > 0);
-
-  if (builderKeyHashes.length === 0) {
-    throw new Error('BUILDER_KEY_HASHES must contain at least one hash');
-  }
-
-  // Validate that all hashes are valid SHA-256 (64 hex characters)
-  for (const hash of builderKeyHashes) {
-    if (!/^[a-f0-9]{64}$/i.test(hash)) {
-      throw new Error(`Invalid SHA-256 hash in BUILDER_KEY_HASHES: ${hash}`);
-    }
-  }
-
-  return { builderKeyHashes };
 }
 
-const config = loadConfig();
+if (BUILDER_KEY_HASHES.length === 0) {
+  throw new Error('BUILDER_KEY_HASHES must contain at least one hash');
+}
+
+const config = { builderKeyHashes: BUILDER_KEY_HASHES };
 console.log(`[Config] Loaded ${config.builderKeyHashes.length} builder key hash(es)`);
 
 // Helper to read version.json

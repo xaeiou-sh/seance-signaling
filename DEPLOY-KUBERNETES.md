@@ -19,7 +19,35 @@ Deploy Seance to DigitalOcean Kubernetes (DOKS) using OpenTofu and cdk8s.
 
 ## Prerequisites
 
-**1. Update Let's Encrypt Email**
+**1. Setup SOPS for Secrets**
+
+Install SOPS and age encryption:
+```bash
+nix-env -iA nixpkgs.sops
+```
+
+Get the age key from team or generate a new one:
+```bash
+mkdir -p "$HOME/Library/Application Support/sops/age"
+age-keygen -o "$HOME/Library/Application Support/sops/age/keys.txt"
+chmod 600 "$HOME/Library/Application Support/sops/age/keys.txt"
+# Update secrets/.sops.yaml with the public key from output
+```
+
+Edit secrets:
+```bash
+sops secrets/secrets.yaml
+```
+
+Ensure production secrets are set correctly:
+- `STRIPE_SECRET_KEY`: Your Stripe secret key (sk_live_...)
+- `STRIPE_PRICE_ID`: Your Stripe price ID (price_...)
+
+Builder key hashes are already hardcoded in the backend code.
+
+See `secrets/README.md` for complete documentation.
+
+**2. Update Let's Encrypt Email**
 
 Edit `kubernetes/cdk8s/src/config.ts` and update:
 ```typescript
@@ -316,7 +344,7 @@ This will:
 ## Next Steps
 
 **Production hardening:**
-1. Set up proper secret management (Sealed Secrets or External Secrets Operator)
+1. ✅ ~~Set up proper secret management~~ (Already using SOPS+age)
 2. Configure HorizontalPodAutoscaler for traffic-based scaling
 3. Add monitoring (Prometheus + Grafana)
 4. Set up log aggregation (Loki or Elasticsearch)

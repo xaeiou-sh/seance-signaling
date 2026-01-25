@@ -52,6 +52,7 @@ export const CONFIG = {
     // External images (same for all environments)
     signaling: 'funnyzak/y-webrtc-signaling:latest',
     valkey: 'valkey/valkey:latest',
+    litellm: 'ghcr.io/berriai/litellm:main-latest',
   },
 
   // TLS configuration
@@ -62,14 +63,6 @@ export const CONFIG = {
     issuer: ENVIRONMENT === 'prod' ? 'letsencrypt-prod' : 'selfsigned-issuer',
     // Secret name for TLS certificates (managed by cert-manager)
     secretName: 'seance-tls',
-  },
-
-  // Secrets (dummy values for now - same in dev and prod)
-  // TODO: Replace with proper secret management before production deployment
-  secrets: {
-    stripeSecretKey: 'sk_test_dummy_dev_key_replace_in_production',
-    stripePriceId: 'price_dummy_dev_id_replace_in_production',
-    builderKeyHashes: 'adf1e1bee2a545ca24690755a59ea58af30cf9f86692541a6a932a75dc831334',
   },
 
   // Let's Encrypt email for certificate expiration notifications

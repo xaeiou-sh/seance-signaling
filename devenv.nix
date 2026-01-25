@@ -4,8 +4,7 @@
   config,
   inputs,
   ...
-}:
-{
+}: {
   dotenv.enable = true;
 
   # Packages needed for Kubernetes development
@@ -21,6 +20,8 @@
     # Infrastructure as code
     opentofu
     ansible
+    # utilities
+    sops
   ];
 
   # Kubernetes development scripts
