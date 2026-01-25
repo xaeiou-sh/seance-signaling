@@ -36,7 +36,7 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (re
   }
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: '2024-12-18.acacia',
+    apiVersion: '2025-12-15.clover',
   });
 
   try {
@@ -67,8 +67,8 @@ app.post('/stripe/webhook', express.raw({ type: 'application/json' }), async (re
             customerId: subscription.customer as string,
             subscriptionId: subscription.id,
             status: subscription.status as any,
-            currentPeriodEnd: subscription.current_period_end,
-            cancelAtPeriodEnd: subscription.cancel_at_period_end,
+            currentPeriodEnd: (subscription as any).current_period_end,
+            cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
           });
 
           console.log(`[Stripe Webhook] Subscription ${subscription.status} for ${customer.email}`);
