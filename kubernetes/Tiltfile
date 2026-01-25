@@ -31,10 +31,10 @@ docker_build(
   ],
 )
 
-# Generate k8s manifests from cdk8s
+# Generate k8s manifests from cdk8s (dev environment)
 local_resource(
   'cdk8s-synth',
-  cmd='cd cdk8s && npm run synth',
+  cmd='cd cdk8s && SEANCE_ENV=dev npm run synth',
   deps=['cdk8s/src', 'cdk8s/imports'],
   labels=['infrastructure'],
 )

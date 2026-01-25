@@ -85,9 +85,9 @@ fi
 cd ..
 
 echo ""
-echo "🎯 Generating initial Kubernetes manifests..."
+echo "🎯 Generating initial Kubernetes manifests (dev environment)..."
 cd cdk8s
-npm run synth
+SEANCE_ENV=dev npm run synth
 cd ..
 
 echo ""

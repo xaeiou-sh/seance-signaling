@@ -73,16 +73,18 @@ export class SeanceChart extends Chart {
           name: 'backend',
           image: CONFIG.images.backend,
           portNumber: CONFIG.ports.backend,
-          resources: {
-            cpu: {
-              request: kplus.Cpu.millis(500),
-              limit: kplus.Cpu.millis(500),
+          ...(CONFIG.resources.backend && {
+            resources: {
+              cpu: {
+                request: kplus.Cpu.millis(CONFIG.resources.backend.cpuMillis),
+                limit: kplus.Cpu.millis(CONFIG.resources.backend.cpuMillis),
+              },
+              memory: {
+                request: Size.mebibytes(CONFIG.resources.backend.memoryMebibytes),
+                limit: Size.mebibytes(CONFIG.resources.backend.memoryMebibytes),
+              },
             },
-            memory: {
-              request: Size.mebibytes(512),
-              limit: Size.mebibytes(512),
-            },
-          },
+          }),
           envVariables: {
             PORT: kplus.EnvValue.fromValue(CONFIG.ports.backend.toString()),
             DEV_MODE: kplus.EnvValue.fromValue(CONFIG.devMode.toString()),
@@ -206,16 +208,18 @@ export class SeanceChart extends Chart {
           name: 'landing',
           image: CONFIG.images.landing,
           portNumber: CONFIG.ports.landing,
-          resources: {
-            cpu: {
-              request: kplus.Cpu.millis(50),   // nginx is super light
-              limit: kplus.Cpu.millis(200),
+          ...(CONFIG.resources.landing && {
+            resources: {
+              cpu: {
+                request: kplus.Cpu.millis(CONFIG.resources.landing.cpuMillis),
+                limit: kplus.Cpu.millis(CONFIG.resources.landing.cpuMillis),
+              },
+              memory: {
+                request: Size.mebibytes(CONFIG.resources.landing.memoryMebibytes),
+                limit: Size.mebibytes(CONFIG.resources.landing.memoryMebibytes),
+              },
             },
-            memory: {
-              request: Size.mebibytes(64),     // nginx uses very little memory
-              limit: Size.mebibytes(128),
-            },
-          },
+          }),
           // Environment variables (only needed for dev mode Vite server, not for prod static files)
           envVariables: CONFIG.devMode ? {
             VITE_BACKEND_URL: kplus.EnvValue.fromValue(`https://${CONFIG.backendDomain}`),

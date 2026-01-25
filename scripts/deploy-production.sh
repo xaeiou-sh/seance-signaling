@@ -65,10 +65,11 @@ docker buildx build \
   --push \
   "$REPO_ROOT"
 
-# Regenerate Kubernetes manifests with git commit hash
+# Regenerate Kubernetes manifests with git commit hash (prod environment)
 echo "🔧 Regenerating Kubernetes manifests..."
 cd "$REPO_ROOT/kubernetes/cdk8s"
 export GIT_COMMIT
+export SEANCE_ENV=prod
 npm run synth
 
 # Return to repo root

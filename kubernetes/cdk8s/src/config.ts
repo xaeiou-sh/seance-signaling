@@ -1,17 +1,31 @@
 // Seance Kubernetes Configuration
 // To deploy to a different environment, change ENVIRONMENT and run: npm run synth
 
-export type DeploymentEnvironment = 'dev' | 'prod';
+export type DeploymentEnvironment = 'dev' | 'local' | 'prod';
 
 // ============================================================================
-// CHANGE THIS TO SWITCH ENVIRONMENTS
+// ENVIRONMENT - Automatically set by scripts
 // ============================================================================
-export const ENVIRONMENT: DeploymentEnvironment = 'prod' as DeploymentEnvironment;
+// k8s-dev sets SEANCE_ENV=dev
+// k8s-local sets SEANCE_ENV=local (production build, local cluster)
+// k8s-deploy sets SEANCE_ENV=prod
+export const ENVIRONMENT: DeploymentEnvironment =
+  (process.env.SEANCE_ENV as DeploymentEnvironment) || 'dev';
 // ============================================================================
+
+// Helper: Returns true for production-like environments (local, prod)
+// Use this to ensure 'local' mirrors 'prod' configuration exactly
+const isProdLike = () => ENVIRONMENT === 'local' || ENVIRONMENT === 'prod';
+
+// Helper: Returns prod value for local/prod, dev value for dev
+// Ensures 'local' uses same config as 'prod' to catch issues before deployment
+const prodOrDev = <T>(prodValue: T, devValue: T): T =>
+  isProdLike() ? prodValue : devValue;
 
 // Base domains for each environment
 const BASE_DOMAINS = {
   dev: 'dev.localhost',
+  local: 'local.localhost',
   prod: 'seance.dev',
 } as const;
 
@@ -26,12 +40,15 @@ export const CONFIG = {
 
   // Container images
   images: {
-    backend: ENVIRONMENT === 'dev'
-      ? 'seance-backend:dev'
-      : `fractalhuman1/seance-backend:${process.env.GIT_COMMIT || 'latest'}`,
-    landing: ENVIRONMENT === 'dev'
-      ? 'seance-landing:dev'
-      : `fractalhuman1/seance-landing:${process.env.GIT_COMMIT || 'latest'}`,
+    // Dev uses local images with Vite dev server, local/prod use production builds
+    backend: prodOrDev(
+      `fractalhuman1/seance-backend:${process.env.GIT_COMMIT || 'latest'}`,
+      'seance-backend:dev'
+    ),
+    landing: prodOrDev(
+      `fractalhuman1/seance-landing:${process.env.GIT_COMMIT || 'latest'}`,
+      'seance-landing:dev'
+    ),
     // External images (same for all environments)
     signaling: 'funnyzak/y-webrtc-signaling:latest',
     valkey: 'valkey/valkey:latest',
@@ -40,7 +57,9 @@ export const CONFIG = {
   // TLS configuration
   tls: {
     enabled: true,
-    issuer: ENVIRONMENT === 'dev' ? 'selfsigned-issuer' : 'letsencrypt-prod',
+    // Only prod uses Let's Encrypt (requires public domains)
+    // Dev and local use self-signed certs (.localhost domains)
+    issuer: ENVIRONMENT === 'prod' ? 'letsencrypt-prod' : 'selfsigned-issuer',
     // Secret name for TLS certificates (managed by cert-manager)
     secretName: 'seance-tls',
   },
@@ -57,8 +76,8 @@ export const CONFIG = {
   // TODO: Update this email before running tofu apply for production
   letsencryptEmail: 'admin@seance.dev',
 
-  // Kubernetes namespace
-  namespace: ENVIRONMENT === 'dev' ? 'seance' : 'seance-prod',
+  // Kubernetes namespace (only differs in prod for cluster isolation)
+  namespace: ENVIRONMENT === 'prod' ? 'seance-prod' : 'seance',
 
   // Redis/Valkey connection (uses service DNS name)
   redis: {
@@ -84,18 +103,23 @@ export const CONFIG = {
   },
 
   // Environment-specific behavior flags
+  // Only dev uses dev mode (Vite dev server). Local uses production builds like prod.
   devMode: ENVIRONMENT === 'dev',
 
-  // Resource limits (conservative for 2-node s-2vcpu-2gb cluster)
-  resources: ENVIRONMENT === 'dev'
-    ? {
-        // Dev: minimal resources for local kind cluster
-        backend: { cpu: '500m', memory: '512Mi' },
-        landing: { cpu: '250m', memory: '256Mi' },
-      }
-    : {
-        // Prod: reasonable limits for 2-node cluster (4 vCPU, 4GB total)
-        backend: { cpu: '500m', memory: '512Mi' },
-        landing: { cpu: '250m', memory: '256Mi' },
-      },
+  // Resource limits
+  // IMPORTANT: local mirrors prod exactly to catch resource issues before deployment
+  resources: prodOrDev(
+    {
+      // Prod/Local: Conservative limits for 2-node s-2vcpu-2gb cluster (4 vCPU, 4GB total)
+      // Landing uses nginx serving static files - very lightweight
+      backend: { cpuMillis: 500, memoryMebibytes: 512 },
+      landing: { cpuMillis: 250, memoryMebibytes: 256 },
+    },
+    {
+      // Dev: No resource limits (local machines have 16-64GB RAM)
+      // Vite dev server needs ~1GB memory, so we don't constrain it
+      backend: undefined,
+      landing: undefined,
+    }
+  ),
 } as const;
