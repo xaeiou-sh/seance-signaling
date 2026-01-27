@@ -104,20 +104,6 @@ resource "helm_release" "nginx_ingress" {
     value = "seance-lb"
   }
 
-  # Enable snippet annotations for PostHog reverse proxy
-  # Safe since we control all Ingress resources in this cluster
-  set {
-    name  = "controller.allowSnippetAnnotations"
-    value = "true"
-  }
-
-  # Disable annotation validation to allow server-snippet
-  # Required for ingress-nginx v1.14+
-  set {
-    name  = "controller.enable-annotation-validation"
-    value = "false"
-  }
-
   depends_on = [digitalocean_kubernetes_cluster.seance]
 }
 

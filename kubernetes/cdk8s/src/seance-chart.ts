@@ -213,6 +213,115 @@ export class SeanceChart extends Chart {
       serviceType: kplus.ServiceType.CLUSTER_IP,
     });
 
+    // PostHog reverse proxy - dedicated nginx container
+    // This proxies /beholder/* to PostHog to bypass ad blockers
+    // Runs independently of the backend for maximum uptime
+
+    // Nginx configuration for PostHog proxy
+    const posthogNginxConfig = new kplus.ConfigMap(this, 'posthog-nginx-config', {
+      metadata: {
+        name: 'posthog-nginx-config',
+        namespace: namespace.name,
+      },
+      data: {
+        'nginx.conf': `
+events {
+    worker_connections 1024;
+}
+
+http {
+    # Logging
+    access_log /dev/stdout;
+    error_log /dev/stderr;
+
+    # Timeouts
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+
+    server {
+        listen 80;
+        server_name _;
+
+        # Health check endpoint
+        location /health {
+            return 200 "ok\\n";
+            add_header Content-Type text/plain;
+        }
+
+        # PostHog static assets
+        # Transparent proxy - let PostHog handle all CORS
+        location ~ ^/beholder/static/(.*)$ {
+            resolver 8.8.8.8 valid=300s;
+            resolver_timeout 5s;
+            proxy_pass https://us-assets.i.posthog.com/$1$is_args$args;
+            proxy_ssl_server_name on;
+            proxy_set_header Host us-assets.i.posthog.com;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # PostHog API
+        # Transparent proxy - let PostHog handle all CORS including preflight
+        location ~ ^/beholder/(.*)$ {
+            resolver 8.8.8.8 valid=300s;
+            resolver_timeout 5s;
+            proxy_pass https://us.i.posthog.com/$1$is_args$args;
+            proxy_ssl_server_name on;
+            proxy_set_header Host us.i.posthog.com;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
+        `,
+      },
+    });
+
+    // PostHog proxy deployment
+    const posthogProxy = new kplus.Deployment(this, 'posthog-proxy', {
+      metadata: {
+        name: 'posthog-proxy',
+        namespace: namespace.name,
+      },
+      replicas: 1,
+      containers: [
+        {
+          name: 'nginx',
+          image: 'nginx:alpine',
+          portNumber: 80,
+          resources: {
+            cpu: {
+              request: kplus.Cpu.millis(50),
+              limit: kplus.Cpu.millis(200),
+            },
+            memory: {
+              request: Size.mebibytes(32),
+              limit: Size.mebibytes(128),
+            },
+          },
+          volumeMounts: [
+            {
+              volume: kplus.Volume.fromConfigMap(this, 'posthog-nginx-volume', posthogNginxConfig),
+              path: '/etc/nginx/nginx.conf',
+              subPath: 'nginx.conf',
+            },
+          ],
+          securityContext: {
+            ensureNonRoot: false,
+            readOnlyRootFilesystem: false,
+          },
+        },
+      ],
+    });
+
+    // PostHog proxy service
+    const posthogProxyService = posthogProxy.exposeViaService({
+      name: 'posthog-proxy-service',
+      ports: [{ port: 80, targetPort: 80 }],
+      serviceType: kplus.ServiceType.CLUSTER_IP,
+    });
+
     // LiteLLM ConfigMap with model configuration
     const litellmConfigContent = fs.readFileSync(
       path.join(__dirname, '../litellm-config.yaml'),
@@ -271,11 +380,11 @@ export class SeanceChart extends Chart {
               resources: {
                 requests: {
                   cpu: '100m',
-                  memory: '128Mi',
+                  memory: '512Mi',
                 },
                 limits: {
                   cpu: '500m',
-                  memory: '256Mi',
+                  memory: '1Gi',
                 },
               },
               env: [
@@ -363,106 +472,6 @@ export class SeanceChart extends Chart {
       serviceType: kplus.ServiceType.CLUSTER_IP,
     });
 
-    // PostHog reverse proxy ingress (separate from main ingress to avoid conflicts)
-    // Routes /beholder/* through our domain to bypass ad blockers
-    new ApiObject(this, 'posthog-ingress', {
-      apiVersion: 'networking.k8s.io/v1',
-      kind: 'Ingress',
-      metadata: {
-        name: 'posthog-ingress',
-        namespace: namespace.name,
-        annotations: {
-          'nginx.ingress.kubernetes.io/ssl-redirect': 'true',
-          'nginx.ingress.kubernetes.io/force-ssl-redirect': 'true',
-          'cert-manager.io/cluster-issuer': CONFIG.tls.issuer,
-          // CORS configuration for PostHog
-          'nginx.ingress.kubernetes.io/enable-cors': 'true',
-          'nginx.ingress.kubernetes.io/cors-allow-origin': '*',
-          'nginx.ingress.kubernetes.io/cors-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'nginx.ingress.kubernetes.io/cors-allow-headers': 'DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization',
-          'nginx.ingress.kubernetes.io/cors-allow-credentials': 'false',
-          // Rewrite rules to strip /beholder prefix and route to correct PostHog endpoints
-          'nginx.ingress.kubernetes.io/server-snippet': `
-            location ~ ^/beholder/static/(.*)$ {
-              # PostHog static assets
-              proxy_pass https://us-assets.i.posthog.com/$1$is_args$args;
-              proxy_ssl_server_name on;
-              proxy_set_header Host us-assets.i.posthog.com;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
-
-              # CORS headers
-              add_header Access-Control-Allow-Origin * always;
-              add_header Access-Control-Allow-Methods 'GET, POST, PUT, DELETE, OPTIONS' always;
-              add_header Access-Control-Allow-Headers 'DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-
-              # Handle preflight
-              if ($request_method = OPTIONS) {
-                add_header Access-Control-Allow-Origin * always;
-                add_header Access-Control-Allow-Methods 'GET, POST, PUT, DELETE, OPTIONS' always;
-                add_header Access-Control-Allow-Headers 'DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-                add_header Access-Control-Max-Age 1728000;
-                add_header Content-Type 'text/plain; charset=utf-8';
-                add_header Content-Length 0;
-                return 204;
-              }
-            }
-
-            location ~ ^/beholder/(.*)$ {
-              # PostHog API
-              proxy_pass https://us.i.posthog.com/$1$is_args$args;
-              proxy_ssl_server_name on;
-              proxy_set_header Host us.i.posthog.com;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
-
-              # CORS headers
-              add_header Access-Control-Allow-Origin * always;
-              add_header Access-Control-Allow-Methods 'GET, POST, PUT, DELETE, OPTIONS' always;
-              add_header Access-Control-Allow-Headers 'DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-
-              # Handle preflight
-              if ($request_method = OPTIONS) {
-                add_header Access-Control-Allow-Origin * always;
-                add_header Access-Control-Allow-Methods 'GET, POST, PUT, DELETE, OPTIONS' always;
-                add_header Access-Control-Allow-Headers 'DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-                add_header Access-Control-Max-Age 1728000;
-                add_header Content-Type 'text/plain; charset=utf-8';
-                add_header Content-Length 0;
-                return 204;
-              }
-            }
-          `,
-        },
-      },
-      spec: {
-        ingressClassName: 'nginx',
-        tls: [{
-          hosts: [CONFIG.backendDomain],
-          secretName: CONFIG.tls.secretName,
-        }],
-        rules: [{
-          host: CONFIG.backendDomain,
-          http: {
-            paths: [{
-              path: '/beholder',
-              pathType: 'Prefix',
-              backend: {
-                // Dummy backend service - actual routing handled by server-snippet
-                // Using backend service since we need a valid backend reference
-                service: {
-                  name: 'backend-service',
-                  port: {
-                    number: CONFIG.ports.backend,
-                  },
-                },
-              },
-            }],
-          },
-        }],
-      },
-    });
-
     // Ingress for routing with TLS
     // cert-manager's ingress-shim will automatically create/update the Certificate
     // based on the TLS section below - no manual certificate management needed
@@ -488,6 +497,13 @@ export class SeanceChart extends Chart {
         secret: kplus.Secret.fromSecretName(this, 'tls-secret', CONFIG.tls.secretName),
       },
     ]);
+
+    // PostHog proxy routes (must come before backend routes for proper path matching)
+    ingress.addHostRule(CONFIG.backendDomain, '/beholder',
+      kplus.IngressBackend.fromService(posthogProxyService, {
+        port: 80,
+      })
+    );
 
     // Signaling routes (must come before backend routes for proper path matching)
     ingress.addHostRule(CONFIG.backendDomain, '/signaling',
