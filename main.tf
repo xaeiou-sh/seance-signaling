@@ -111,6 +111,13 @@ resource "helm_release" "nginx_ingress" {
     value = "true"
   }
 
+  # Disable annotation validation to allow server-snippet
+  # Required for ingress-nginx v1.14+
+  set {
+    name  = "controller.enable-annotation-validation"
+    value = "false"
+  }
+
   depends_on = [digitalocean_kubernetes_cluster.seance]
 }
 

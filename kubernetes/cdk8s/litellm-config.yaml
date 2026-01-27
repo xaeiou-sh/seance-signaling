@@ -10,6 +10,11 @@ model_list:
     litellm_params:
       model: openrouter/openai/gpt-oss-120b
       api_key: os.environ/OPENROUTER_API_KEY
+  # Seance OSS Medium - GPT-OSS-120B via OpenRouter (highest throughput)
+  - model_name: seance-oss-deepseek
+    litellm_params:
+      model: openrouter/openai/gpt-oss-120b
+      api_key: os.environ/OPENROUTER_API_KEY
 
 # General settings
 general_settings:
