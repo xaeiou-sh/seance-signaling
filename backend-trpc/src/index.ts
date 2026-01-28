@@ -12,8 +12,6 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'fs';
-import { join } from 'path';
 import { createHash } from 'crypto';
 import swaggerUi from 'swagger-ui-express';
 import { generateOpenApiDocument } from 'trpc-to-openapi';
@@ -21,6 +19,7 @@ import { registerTRPC } from './trpc/adapter.js';
 import { appRouter } from './trpc/router.js';
 import Stripe from 'stripe';
 import { storeSubscription, deleteSubscription } from './stripe/subscription-storage.js';
+import { SpacesClient } from './spaces.js';
 
 const app = express();
 
@@ -125,31 +124,45 @@ if (BUILDER_KEY_HASHES.length === 0) {
 const config = { builderKeyHashes: BUILDER_KEY_HASHES };
 console.log(`[Config] Loaded ${config.builderKeyHashes.length} builder key hash(es)`);
 
-// Helper to read version.json
-function getVersionData() {
-  try {
-    const versionPath = join(process.cwd(), 'releases', 'version.json');
-    if (!existsSync(versionPath)) {
-      throw new Error(`version.json not found at ${versionPath}`);
-    }
-    const data = readFileSync(versionPath, 'utf-8');
-    return JSON.parse(data);
-  } catch (error) {
-    console.error('[Update Server] Failed to read version.json:', error);
-    return null;
-  }
+// Initialize Spaces client
+if (!process.env.SPACES_ACCESS_KEY_ID) {
+  throw new Error('SPACES_ACCESS_KEY_ID environment variable is required');
+}
+if (!process.env.SPACES_SECRET_ACCESS_KEY) {
+  throw new Error('SPACES_SECRET_ACCESS_KEY environment variable is required');
+}
+if (!process.env.SPACES_BUCKET) {
+  throw new Error('SPACES_BUCKET environment variable is required');
+}
+if (!process.env.SPACES_REGION) {
+  throw new Error('SPACES_REGION environment variable is required');
+}
+if (!process.env.SPACES_ENDPOINT) {
+  throw new Error('SPACES_ENDPOINT environment variable is required');
+}
+if (!process.env.SPACES_CDN_ENDPOINT) {
+  throw new Error('SPACES_CDN_ENDPOINT environment variable is required');
 }
 
-// Helper to read file from releases directory
-function readReleaseFile(filePath: string): Buffer | null {
+const spacesClient = new SpacesClient({
+  accessKeyId: process.env.SPACES_ACCESS_KEY_ID,
+  secretAccessKey: process.env.SPACES_SECRET_ACCESS_KEY,
+  bucket: process.env.SPACES_BUCKET,
+  region: process.env.SPACES_REGION,
+  endpoint: process.env.SPACES_ENDPOINT,
+  cdnEndpoint: process.env.SPACES_CDN_ENDPOINT,
+  pathPrefix: process.env.SPACES_PATH_PREFIX || 'prod',
+});
+
+console.log(`[Spaces] Initialized - bucket: ${process.env.SPACES_BUCKET}, prefix: ${process.env.SPACES_PATH_PREFIX || 'prod'}`);
+
+// Helper to read version.json from Spaces
+async function getVersionData() {
   try {
-    const fullPath = join(process.cwd(), 'releases', filePath);
-    if (!existsSync(fullPath)) {
-      return null;
-    }
-    return readFileSync(fullPath);
+    const buffer = await spacesClient.downloadFile('releases/version.json');
+    return JSON.parse(buffer.toString('utf-8'));
   } catch (error) {
-    console.error(`[Update Server] Failed to read file ${filePath}:`, error);
+    console.error('[Update Server] Failed to read version.json from Spaces:', error);
     return null;
   }
 }
@@ -175,54 +188,63 @@ app.post('/deploy', async (req, res) => {
   console.log('[Deploy] Builder key verified successfully');
 
   try {
-    const { files, clearWeb } = req.body as { files: Array<{ path: string; content: string }>; clearWeb?: boolean };
+    const { files } = req.body as { files: Array<{ path: string; content: string }> };
 
-    console.log(`[Deploy] Deploying ${files.length} files`);
+    console.log(`[Deploy] Deploying ${files.length} files to Spaces`);
 
-    // Clear web directory if requested
-    if (clearWeb) {
-      const webPath = join(process.cwd(), 'web');
-      if (existsSync(webPath)) {
-        rmSync(webPath, { recursive: true });
-        console.log('[Deploy] Cleared web directory');
-      }
-      mkdirSync(webPath, { recursive: true });
-      writeFileSync(join(webPath, '.gitkeep'), '');
-    }
+    // Upload each file to Spaces
+    const uploadedFiles: Array<{ path: string; url: string; size: number }> = [];
 
-    // Write each file
     for (const file of files) {
       if (!file.path || !file.content) {
         console.warn('[Deploy] Skipping invalid file entry:', file);
         continue;
       }
 
-      const fullPath = join(process.cwd(), file.path);
-
       // Security: prevent path traversal
-      const normalizedPath = join(process.cwd(), file.path);
-      if (!normalizedPath.startsWith(process.cwd())) {
+      if (file.path.includes('..') || file.path.startsWith('/')) {
         console.error('[Deploy] Path traversal attempt:', file.path);
         res.status(400).json({ error: 'Invalid file path' });
         return;
       }
 
-      // Create directory if needed
-      const dir = join(fullPath, '..');
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
+      // Decode base64 content
+      const content = Buffer.from(file.content, 'base64');
+
+      // Determine content type
+      let contentType = 'application/octet-stream';
+      if (file.path.endsWith('.json')) {
+        contentType = 'application/json';
+      } else if (file.path.endsWith('.yml') || file.path.endsWith('.yaml')) {
+        contentType = 'text/yaml';
+      } else if (file.path.endsWith('.dmg')) {
+        contentType = 'application/x-apple-diskimage';
+      } else if (file.path.endsWith('.html')) {
+        contentType = 'text/html';
+      } else if (file.path.endsWith('.js')) {
+        contentType = 'application/javascript';
+      } else if (file.path.endsWith('.css')) {
+        contentType = 'text/css';
       }
 
-      // Decode base64 and write file
-      const content = Buffer.from(file.content, 'base64');
-      writeFileSync(fullPath, content);
-      console.log(`[Deploy] Wrote ${file.path} (${content.length} bytes)`);
+      // Upload to Spaces
+      await spacesClient.uploadFile(file.path, content, contentType);
+
+      const cdnUrl = spacesClient.getPublicUrl(file.path);
+      uploadedFiles.push({
+        path: file.path,
+        url: cdnUrl,
+        size: content.length,
+      });
+
+      console.log(`[Deploy] Uploaded ${file.path} (${content.length} bytes) -> ${cdnUrl}`);
     }
 
     console.log('[Deploy] Deployment complete');
     res.json({
       success: true,
       filesDeployed: files.length,
+      files: uploadedFiles,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -235,8 +257,8 @@ app.post('/deploy', async (req, res) => {
 });
 
 // Version API
-app.get('/updates/api/version.json', (req, res) => {
-  const versionData = getVersionData();
+app.get('/updates/api/version.json', async (req, res) => {
+  const versionData = await getVersionData();
 
   if (!versionData) {
     res.status(500).json({ error: 'Version data not found' });
@@ -246,82 +268,17 @@ app.get('/updates/api/version.json', (req, res) => {
   res.json(versionData);
 });
 
-// Serve update manifest (JSON format for electron-updater)
-app.get('/updates/darwin-arm64/RELEASES.json', (req, res) => {
-  const versionData = getVersionData();
-
-  if (!versionData) {
-    res.status(500).json({ error: 'Version data not found' });
-    return;
-  }
-
-  const manifest = {
-    version: versionData.desktop.version,
-    releaseDate: versionData.desktop.released,
-    url: `https://backend.seance.dev/updates/releases/darwin-arm64/Seance-${versionData.desktop.version}-mac.dmg`
-  };
-
-  res.json(manifest);
-});
-
 // Serve latest-mac.yml (YAML format for electron-updater)
-app.get('/updates/darwin-arm64/latest-mac.yml', (req, res) => {
-  const manifest = readReleaseFile('darwin-arm64/latest-mac.yml');
-
-  if (!manifest) {
+app.get('/updates/darwin-arm64/latest-mac.yml', async (req, res) => {
+  try {
+    const manifest = await spacesClient.downloadFile('releases/darwin-arm64/latest-mac.yml');
+    res.type('text/yaml').send(manifest);
+  } catch (error) {
+    console.error('[Update Server] Failed to fetch latest-mac.yml:', error);
     res.status(404).send('Manifest not found');
-    return;
   }
-
-  res.type('text/yaml').send(manifest);
 });
 
-// Serve .dmg files
-app.get('/updates/releases/darwin-arm64/:filename', (req, res) => {
-  const { filename } = req.params;
-
-  // Security: prevent path traversal
-  if (filename.includes('..') || filename.includes('/')) {
-    res.status(400).send('Invalid filename');
-    return;
-  }
-
-  const fileData = readReleaseFile(`darwin-arm64/${filename}`);
-
-  if (!fileData) {
-    res.status(404).send('File not found');
-    return;
-  }
-
-  res
-    .type('application/x-apple-diskimage')
-    .header('Content-Disposition', `attachment; filename="${filename}"`)
-    .send(fileData);
-});
-
-// Download latest version with proper filename
-app.get('/updates/darwin-arm64/download-latest', (req, res) => {
-  const versionData = getVersionData();
-
-  if (!versionData) {
-    res.status(500).json({ error: 'Version data not found' });
-    return;
-  }
-
-  const version = versionData.desktop.version;
-  const filename = `Seance-${version}-mac.dmg`;
-  const fileData = readReleaseFile(`darwin-arm64/${filename}`);
-
-  if (!fileData) {
-    res.status(404).send('File not found');
-    return;
-  }
-
-  res
-    .type('application/x-apple-diskimage')
-    .header('Content-Disposition', `attachment; filename="${filename}"`)
-    .send(fileData);
-});
 
 // ARCHIVED: OIDC authentication endpoints
 // Self-hosted auth moved to /archive directory
@@ -357,29 +314,18 @@ app.use('/ui', swaggerUi.serve, swaggerUi.setup(openApiDocument));
 
 console.log('[Swagger] Registered at /ui');
 
-// Serve static files from web/ directory
-app.use(express.static(join(process.cwd(), 'web')));
+// Health check endpoint for Kubernetes
+app.get('/', (req, res) => {
+  res.json({
+    status: 'healthy',
+    service: 'seance-backend',
+    timestamp: new Date().toISOString(),
+  });
+});
 
-// SPA fallback - serve index.html for client-side routing
-app.get('*', (req, res) => {
-  // Don't apply SPA fallback to API routes
-  if (req.url.startsWith('/updates') || req.url.startsWith('/trpc') || req.url.startsWith('/api')) {
-    res.status(404).send('Not found');
-    return;
-  }
-
-  // Serve index.html for SPA routes
-  try {
-    const indexPath = join(process.cwd(), 'web', 'index.html');
-    if (existsSync(indexPath)) {
-      res.sendFile(indexPath);
-      return;
-    }
-  } catch (error) {
-    console.error('[Static File] Error serving index.html:', error);
-  }
-
-  res.status(404).send('Not found');
+// Catch-all 404
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
 });
 
 // Start server

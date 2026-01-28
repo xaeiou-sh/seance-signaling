@@ -238,6 +238,12 @@ variable "cloudflare_zone_id" {
   type        = string
 }
 
+variable "environment" {
+  description = "Environment name (prod or dev) - used as Spaces path prefix"
+  type        = string
+  default     = "prod"
+}
+
 # ============================================================================
 # OUTPUTS
 # ============================================================================
@@ -285,4 +291,74 @@ output "litellm_domain" {
 output "kubeconfig_path" {
   description = "Path to kubeconfig file"
   value       = local_file.kubeconfig.filename
+}
+
+# ============================================================================
+# DIGITALOCEAN SPACES (Object Storage)
+# ============================================================================
+
+resource "digitalocean_spaces_bucket" "seance_cdn" {
+  name   = "seance-cdn"
+  region = "sfo3"
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["GET", "HEAD"]
+    allowed_origins = ["*"]
+    max_age_seconds = 3600
+  }
+}
+
+# Create bucket-scoped access key (least privilege)
+resource "digitalocean_spaces_bucket_key" "seance_cdn" {
+  bucket = digitalocean_spaces_bucket.seance_cdn.name
+  region = digitalocean_spaces_bucket.seance_cdn.region
+  name   = "seance-backend-${var.environment}"
+}
+
+# Create Kubernetes secret with Spaces credentials
+resource "kubernetes_secret" "spaces" {
+  metadata {
+    name      = "spaces-credentials"
+    namespace = "seance-prod"
+  }
+
+  data = {
+    SPACES_ACCESS_KEY_ID     = digitalocean_spaces_bucket_key.seance_cdn.access_key_id
+    SPACES_SECRET_ACCESS_KEY = digitalocean_spaces_bucket_key.seance_cdn.secret_access_key
+    SPACES_BUCKET            = digitalocean_spaces_bucket.seance_cdn.name
+    SPACES_REGION            = digitalocean_spaces_bucket.seance_cdn.region
+    SPACES_ENDPOINT          = "https://${digitalocean_spaces_bucket.seance_cdn.region}.digitaloceanspaces.com"
+    SPACES_CDN_ENDPOINT      = "https://${digitalocean_spaces_bucket.seance_cdn.name}.${digitalocean_spaces_bucket.seance_cdn.region}.cdn.digitaloceanspaces.com"
+    SPACES_PATH_PREFIX       = var.environment
+  }
+
+  # Create after manifests are applied (so namespace exists)
+  depends_on = [null_resource.apply_manifests]
+}
+
+output "spaces_endpoint" {
+  description = "Spaces API endpoint"
+  value       = "https://${digitalocean_spaces_bucket.seance_cdn.region}.digitaloceanspaces.com"
+}
+
+output "spaces_cdn_endpoint" {
+  description = "Spaces CDN endpoint"
+  value       = "https://${digitalocean_spaces_bucket.seance_cdn.name}.${digitalocean_spaces_bucket.seance_cdn.region}.cdn.digitaloceanspaces.com"
+}
+
+output "spaces_bucket_name" {
+  description = "Spaces bucket name"
+  value       = digitalocean_spaces_bucket.seance_cdn.name
+}
+
+output "spaces_access_key_id" {
+  description = "Spaces access key ID (bucket-scoped)"
+  value       = digitalocean_spaces_bucket_key.seance_cdn.access_key_id
+}
+
+output "spaces_secret_access_key" {
+  description = "Spaces secret access key (bucket-scoped)"
+  value       = digitalocean_spaces_bucket_key.seance_cdn.secret_access_key
+  sensitive   = true
 }

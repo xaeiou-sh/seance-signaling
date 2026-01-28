@@ -73,6 +73,10 @@ export class SeanceChart extends Chart {
       stringData: CONFIG.secrets,
     });
 
+    // Spaces secret (managed by Terraform, not cdk8s)
+    // Terraform creates this secret with bucket-scoped credentials
+    const spacesSecret = kplus.Secret.fromSecretName(this, 'spaces-secret', 'spaces-credentials');
+
     // Backend deployment
     const backend = new kplus.Deployment(this, 'backend', {
       metadata: {
@@ -113,6 +117,36 @@ export class SeanceChart extends Chart {
             STRIPE_PRICE_ID: kplus.EnvValue.fromSecretValue({
               secret: appSecrets,
               key: 'STRIPE_PRICE_ID',
+            }),
+            // Spaces (DigitalOcean Object Storage)
+            // References Terraform-managed secret with bucket-scoped credentials
+            SPACES_ACCESS_KEY_ID: kplus.EnvValue.fromSecretValue({
+              secret: spacesSecret,
+              key: 'SPACES_ACCESS_KEY_ID',
+            }),
+            SPACES_SECRET_ACCESS_KEY: kplus.EnvValue.fromSecretValue({
+              secret: spacesSecret,
+              key: 'SPACES_SECRET_ACCESS_KEY',
+            }),
+            SPACES_BUCKET: kplus.EnvValue.fromSecretValue({
+              secret: spacesSecret,
+              key: 'SPACES_BUCKET',
+            }),
+            SPACES_REGION: kplus.EnvValue.fromSecretValue({
+              secret: spacesSecret,
+              key: 'SPACES_REGION',
+            }),
+            SPACES_ENDPOINT: kplus.EnvValue.fromSecretValue({
+              secret: spacesSecret,
+              key: 'SPACES_ENDPOINT',
+            }),
+            SPACES_CDN_ENDPOINT: kplus.EnvValue.fromSecretValue({
+              secret: spacesSecret,
+              key: 'SPACES_CDN_ENDPOINT',
+            }),
+            SPACES_PATH_PREFIX: kplus.EnvValue.fromSecretValue({
+              secret: spacesSecret,
+              key: 'SPACES_PATH_PREFIX',
             }),
             // Redis/Valkey connection (uses service DNS name in k8s)
             REDIS_HOST: kplus.EnvValue.fromValue(CONFIG.redis.serviceName),

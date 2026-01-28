@@ -4,6 +4,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 
 // Type definition for our secrets structure (nested format)
+// Note: Spaces credentials are managed by Terraform, not SOPS
 export interface SecretsStructure {
   stripe: {
     STRIPE_SECRET_KEY: string;
