@@ -219,32 +219,37 @@ resource "railway_variable" "beholder_port" {
 
 # Backend domain
 resource "railway_custom_domain" "backend" {
-  service_id = railway_service.backend.id
-  domain     = "backend.seance.dev"
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.backend.id
+  domain         = "backend.seance.dev"
 }
 
 # Landing domain (root)
 resource "railway_custom_domain" "landing" {
-  service_id = railway_service.landing.id
-  domain     = "seance.dev"
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.landing.id
+  domain         = "seance.dev"
 }
 
 # Signaling domain
 resource "railway_custom_domain" "signaling" {
-  service_id = railway_service.signaling.id
-  domain     = "signaling.seance.dev"
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.signaling.id
+  domain         = "signaling.seance.dev"
 }
 
 # Beholder domain
 resource "railway_custom_domain" "beholder" {
-  service_id = railway_service.beholder.id
-  domain     = "beholder.seance.dev"
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.beholder.id
+  domain         = "beholder.seance.dev"
 }
 
 # LiteLLM domain
 resource "railway_custom_domain" "litellm" {
-  service_id = railway_service.litellm.id
-  domain     = "litellm.seance.dev"
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.litellm.id
+  domain         = "litellm.seance.dev"
 }
 
 # ============================================================================
