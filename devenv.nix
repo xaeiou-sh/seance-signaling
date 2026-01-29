@@ -17,7 +17,7 @@
     tilt
     cdk8s-cli
     doctl
-    railway
+    # railway
     # Infrastructure as code
     opentofu
     ansible
