@@ -1,6 +1,9 @@
-# Secrets Management with SecretSpec
+# Secrets Management
 
-This project uses [SecretSpec](https://secretspec.dev) for declarative secrets management.
+This project uses different secret management approaches for different contexts:
+
+- **Development environment**: [SecretSpec](https://secretspec.dev) for local development secrets
+- **Kubernetes deployments**: SOPS+age for encrypted secrets in git (see `secrets/README.md`)
 
 ## Overview
 
@@ -210,8 +213,57 @@ ZITADEL_CLIENT_ID=356276462078215221
 ZITADEL_CLIENT_SECRET=O6ET6thqA0sfwlsykvsJ...
 ```
 
+## Kubernetes Secrets (SOPS+age)
+
+For Kubernetes deployments, secrets are managed separately from manifests using SOPS and age encryption:
+
+- **Location**: `secrets/secrets.yaml` (encrypted, safe to commit)
+- **Deployment**: Secrets applied directly to cluster via `kubectl` (never in manifests)
+- **Security**: Generated Kubernetes manifests contain NO secret values
+- **Documentation**: See `secrets/README.md` for complete guide
+
+**Structure:**
+Secrets are organized by service for clarity:
+```yaml
+stripe:
+  STRIPE_SECRET_KEY: sk_live_...
+  STRIPE_PRICE_ID: price_...
+
+litellm:
+  LITELLM_MASTER_KEY: sk-...
+  OPENAI_API_KEY: sk-...
+  ANTHROPIC_API_KEY: sk-ant-...
+```
+
+**How it works:**
+1. Secrets encrypted with SOPS+age in `secrets/secrets.yaml`
+2. Deployment script uses `yq` to extract all key-value pairs
+3. All keys are flattened and applied to cluster: `kubectl create secret`
+4. Kubernetes manifests only reference secrets via `secretKeyRef`
+5. No secret values ever stored in git or generated YAML files
+
+**Quick setup:**
+```bash
+# Install dependencies
+nix-env -iA nixpkgs.sops nixpkgs.yq-go
+
+# Edit secrets (auto-encrypts on save)
+sops secrets/secrets.yaml
+```
+
+**Apply to cluster:**
+```bash
+# Production
+./scripts/deploy-production.sh  # Auto-applies secrets
+
+# Development
+tilt up  # Auto-applies secrets to local cluster
+```
+
 ## Resources
 
 - [SecretSpec Documentation](https://secretspec.dev)
 - [devenv SecretSpec Integration](https://devenv.sh/integrations/secretspec/)
 - [Announcing SecretSpec](https://devenv.sh/blog/2025/07/21/announcing-secretspec-declarative-secrets-management/)
+- [SOPS Documentation](https://github.com/getsops/sops)
+- [age Encryption](https://age-encryption.org/)

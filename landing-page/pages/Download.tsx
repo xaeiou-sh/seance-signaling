@@ -41,9 +41,12 @@ export default function Download() {
     enabled: isAuthenticated,
   });
 
-  const downloadQuery = trpc.downloads.getProtectedDownload.useQuery(undefined, {
-    enabled: isAuthenticated && subscriptionQuery.data?.hasSubscription === true,
-  });
+  // Auth disabled - no protected downloads available
+  const downloadQuery = {
+    data: null,
+    isLoading: false,
+    error: null,
+  };
 
   // Redirect to checkout if not authenticated or no active subscription
   useEffect(() => {
@@ -78,34 +81,16 @@ export default function Download() {
     const detectedOS = detectOS();
     setOs(detectedOS);
 
-    // Auto-download for Mac users (only if subscribed and download URL is ready)
-    if (detectedOS === "mac" &&
-        subscriptionQuery.data?.hasSubscription &&
-        (subscriptionQuery.data.status === 'active' || subscriptionQuery.data.status === 'trialing') &&
-        downloadQuery.data?.downloadUrl) {
-      posthog.capture('download_started', {
-        method: 'auto',
-        os: 'mac',
-        version: downloadQuery.data.version,
-      });
-      setDownloading(true);
-      window.location.href = downloadQuery.data.downloadUrl;
-    }
-  }, [subscriptionQuery.data, downloadQuery.data]);
+    // Auth disabled - auto-download not available
+  }, []);
 
   const handleManualDownload = () => {
-    if (!downloadQuery.data?.downloadUrl) {
-      console.error('Download URL not available');
-      return;
-    }
-
-    posthog.capture('download_started', {
+    // Auth disabled - downloads not available
+    posthog.capture('download_attempted_no_auth', {
       method: 'manual',
       os: 'mac',
-      version: downloadQuery.data.version,
     });
-    setDownloading(true);
-    window.location.href = downloadQuery.data.downloadUrl;
+    console.error('Download URL not available - auth disabled');
   };
 
   const handleWebAppClick = () => {

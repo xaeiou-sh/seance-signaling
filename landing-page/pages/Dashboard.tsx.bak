@@ -7,8 +7,6 @@ import { trpc } from "@/lib/trpc";
 // import { useAuth } from "@/lib/auth-context";
 
 export default function Dashboard() {
-  const navigate = useNavigate();
-
   // ARCHIVED: Auth disabled
   const user = null as any;
   const isAuthenticated = false;
@@ -82,10 +80,10 @@ export default function Dashboard() {
           <h2 className="mb-4 text-xl font-bold text-neon">Account Information</h2>
           <div className="space-y-2">
             <p className="text-mist">
-              <span className="font-medium">Auth:</span> Disabled
+              <span className="font-medium">Email:</span> {currentUser?.email || user?.email}
             </p>
-            <p className="text-mist text-sm">
-              Authentication is currently disabled. User account features are not available.
+            <p className="text-mist">
+              <span className="font-medium">User ID:</span> {currentUser?.id || user?.id}
             </p>
           </div>
         </div>

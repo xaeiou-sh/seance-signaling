@@ -1,0 +1,5 @@
+language: typescript
+app: npx ts-node src/main.ts
+output: ../manifests
+imports:
+  - helm:https://charts.jetstack.io/cert-manager@v1.16.2

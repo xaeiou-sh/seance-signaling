@@ -1,0 +1,55 @@
+# Tilt configuration for Seance local development
+# ONLY handles live code updates - all k8s resources are applied by dev.sh
+
+# Ensure we're using the local kind cluster
+allow_k8s_contexts('kind-seance-local')
+
+# Load k8s manifests (already applied by dev.sh, Tilt just monitors them)
+k8s_yaml('./cdk8s/dist/cert-manager.k8s.yaml')
+k8s_yaml('./cdk8s/dist/seance.k8s.yaml')
+
+# Build backend image with live reload
+docker_build(
+  'seance-backend:dev',
+  context='..',  # Repo root to access shared code
+  dockerfile='../backend-trpc/Dockerfile.dev',
+  live_update=[
+    sync('../backend-trpc/src', '/app/src'),
+    sync('../backend-trpc/package.json', '/app/package.json'),
+    run('cd /app && npm install', trigger=['../backend-trpc/package.json']),
+  ],
+)
+
+# Build landing page image with Vite HMR
+docker_build(
+  'seance-landing:dev',
+  context='..',  # Repo root to access backend types
+  dockerfile='../landing-page/Dockerfile.dev',
+  live_update=[
+    sync('../landing-page/src', '/app/src'),
+    sync('../landing-page/index.html', '/app/index.html'),
+    sync('../landing-page/package.json', '/app/package.json'),
+    run('cd /app && npm install', trigger=['../landing-page/package.json']),
+  ],
+)
+
+# Monitor existing k8s resources (applied by dev.sh)
+k8s_resource('backend', labels=['backend'])
+k8s_resource('landing', labels=['frontend'])
+k8s_resource('signaling', labels=['infrastructure'])
+k8s_resource('valkey', labels=['infrastructure'])
+k8s_resource('litellm', labels=['infrastructure'])
+
+print("""
+🔮 Seance Development - Live Reload Active
+
+Access via:
+  Marketing: https://dev.localhost
+  Backend:   https://backend.dev.localhost
+  App:       https://app.dev.localhost
+  LiteLLM:   https://litellm.dev.localhost
+
+⚠️  Self-signed certs: Click 'Advanced' → 'Proceed' in browser
+
+💡 Tip: Edit backend-trpc/src or landing-page/src for instant updates
+""")

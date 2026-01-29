@@ -5,8 +5,8 @@ export default function TestTRPC() {
   // Test the health check endpoint
   const pingQuery = trpc.health.ping.useQuery();
 
-  // Test the downloads endpoint
-  const latestQuery = trpc.downloads.getLatest.useQuery();
+  // Test the downloads endpoint (list is the only available endpoint)
+  const latestQuery = trpc.downloads.list.useQuery();
 
   return (
     <div className="min-h-screen bg-void p-8">
@@ -27,9 +27,9 @@ export default function TestTRPC() {
           )}
         </div>
 
-        {/* Latest Download Info */}
+        {/* Downloads List */}
         <div className="rounded-lg border border-phantom bg-void p-6">
-          <h2 className="mb-4 text-xl font-bold text-neon">Latest Download</h2>
+          <h2 className="mb-4 text-xl font-bold text-neon">Downloads List</h2>
           {latestQuery.isLoading && <p className="text-mist">Loading...</p>}
           {latestQuery.error && (
             <p className="text-flame">Error: {latestQuery.error.message}</p>

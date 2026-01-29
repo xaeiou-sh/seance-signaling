@@ -1,0 +1,12 @@
+# CDK8s generated manifests
+manifests/
+
+# Node modules
+cdk8s/node_modules/
+cdk8s/dist/
+
+# CDK8s imports (generated from Helm charts)
+cdk8s/imports/
+
+# Tilt build cache
+.tilt-cache/

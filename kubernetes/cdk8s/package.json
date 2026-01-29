@@ -1,0 +1,26 @@
+{
+  "name": "cdk8s",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "synth": "npx ts-node src/main.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "cdk8s": "^2.70.43",
+    "cdk8s-cli": "^2.203.18",
+    "constructs": "^10.4.5",
+    "ts-node": "^10.9.2"
+  },
+  "dependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.0.10",
+    "cdk8s-plus-30": "^2.4.10",
+    "js-yaml": "^4.1.1",
+    "typescript": "^5.9.3"
+  }
+}

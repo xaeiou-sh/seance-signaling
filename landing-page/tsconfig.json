@@ -22,7 +22,8 @@
     "noUncheckedSideEffectImports": true,
 
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@backend/*": ["../backend-trpc/*"]
     }
   },
   "include": ["src", "components", "lib"]
