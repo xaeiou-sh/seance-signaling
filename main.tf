@@ -112,12 +112,9 @@ resource "railway_environment" "production" {
 
 # Backend service
 resource "railway_service" "backend" {
-  name       = "backend"
-  project_id = railway_project.seance.id
-
-  source {
-    image = "fractalhuman1/seance-backend:${var.git_commit}"
-  }
+  name         = "backend"
+  project_id   = railway_project.seance.id
+  source_image = "fractalhuman1/seance-backend:${var.git_commit}"
 }
 
 # Backend environment variables
@@ -148,12 +145,9 @@ resource "railway_variable" "backend_redis_port" {
 
 # Landing page service
 resource "railway_service" "landing" {
-  name       = "landing"
-  project_id = railway_project.seance.id
-
-  source {
-    image = "fractalhuman1/seance-landing:${var.git_commit}"
-  }
+  name         = "landing"
+  project_id   = railway_project.seance.id
+  source_image = "fractalhuman1/seance-landing:${var.git_commit}"
 }
 
 resource "railway_variable" "landing_port" {
@@ -165,12 +159,9 @@ resource "railway_variable" "landing_port" {
 
 # Signaling server (WebRTC)
 resource "railway_service" "signaling" {
-  name       = "signaling"
-  project_id = railway_project.seance.id
-
-  source {
-    image = "funnyzak/y-webrtc-signaling:latest"
-  }
+  name         = "signaling"
+  project_id   = railway_project.seance.id
+  source_image = "funnyzak/y-webrtc-signaling:latest"
 }
 
 resource "railway_variable" "signaling_port" {
@@ -182,12 +173,9 @@ resource "railway_variable" "signaling_port" {
 
 # Valkey (Redis) service
 resource "railway_service" "valkey" {
-  name       = "valkey"
-  project_id = railway_project.seance.id
-
-  source {
-    image = "valkey/valkey:latest"
-  }
+  name         = "valkey"
+  project_id   = railway_project.seance.id
+  source_image = "valkey/valkey:latest"
 }
 
 resource "railway_variable" "valkey_port" {
@@ -199,12 +187,9 @@ resource "railway_variable" "valkey_port" {
 
 # LiteLLM service - custom image with built-in config
 resource "railway_service" "litellm" {
-  name       = "litellm"
-  project_id = railway_project.seance.id
-
-  source {
-    image = "fractalhuman1/seance-litellm:${var.git_commit}"
-  }
+  name         = "litellm"
+  project_id   = railway_project.seance.id
+  source_image = "fractalhuman1/seance-litellm:${var.git_commit}"
 }
 
 resource "railway_variable" "litellm_port" {
@@ -216,12 +201,9 @@ resource "railway_variable" "litellm_port" {
 
 # Beholder (PostHog proxy) - custom nginx image with built-in config
 resource "railway_service" "beholder" {
-  name       = "beholder"
-  project_id = railway_project.seance.id
-
-  source {
-    image = "fractalhuman1/seance-beholder:${var.git_commit}"
-  }
+  name         = "beholder"
+  project_id   = railway_project.seance.id
+  source_image = "fractalhuman1/seance-beholder:${var.git_commit}"
 }
 
 resource "railway_variable" "beholder_port" {
