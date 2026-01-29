@@ -14,15 +14,12 @@ DOCKER_USERNAME="fractalhuman1"
 GIT_COMMIT=$(git rev-parse --short HEAD)
 echo "📦 Building images for commit: $GIT_COMMIT"
 
-# Check for uncommitted changes
+# Check for uncommitted changes (warning only)
 if [ -n "$(git status --porcelain)" ]; then
   echo "⚠️  Warning: You have uncommitted changes"
   echo "   Deployed code won't match git history exactly"
-  read -p "Continue anyway? (y/N) " -n 1 -r
-  echo
-  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    exit 1
-  fi
+  echo "   Continuing deployment..."
+  echo ""
 fi
 
 # Verify required environment variables
@@ -42,19 +39,8 @@ if [ -z "${RAILWAY_TOKEN:-}" ]; then
   exit 1
 fi
 
-# Check Railway CLI is installed
-if ! command -v railway &> /dev/null; then
-  echo "Error: Railway CLI not found"
-  echo "Install with: brew install railway"
-  exit 1
-fi
-
-# Check Railway CLI is authenticated
-echo "🔐 Checking Railway authentication..."
-if ! railway whoami &> /dev/null; then
-  echo "Railway CLI not authenticated. Logging in..."
-  railway login
-fi
+# Note: Railway CLI check moved to apply-railway-secrets.sh
+# We don't need Railway CLI for building images or running Terraform
 
 # Docker Hub login check
 echo "🔐 Checking Docker Hub authentication..."
