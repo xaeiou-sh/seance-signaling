@@ -4,7 +4,6 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 
 // Type definition for our secrets structure (nested format)
-// Note: Spaces credentials are managed by Terraform, not SOPS
 export interface SecretsStructure {
   stripe: {
     STRIPE_SECRET_KEY: string;
@@ -13,6 +12,10 @@ export interface SecretsStructure {
   litellm: {
     LITELLM_MASTER_KEY: string;
     [key: string]: string; // Allow arbitrary API keys
+  };
+  spaces: {
+    SPACES_ACCESS_KEY_ID: string;
+    SPACES_SECRET_ACCESS_KEY: string;
   };
 }
 
@@ -41,13 +44,21 @@ export function loadSecrets(): SecretsStructure {
     const parsed = load(decrypted) as SecretsStructure | FlatSecrets;
 
     // Detect format: if has top-level keys like 'stripe', it's nested; otherwise it's flat
-    const isNested = 'stripe' in parsed || 'litellm' in parsed;
+    const isNested = 'stripe' in parsed || 'litellm' in parsed || 'spaces' in parsed || 'digital_ocean_spaces' in parsed;
 
     let secrets: SecretsStructure;
 
     if (isNested) {
       // New nested format
-      secrets = parsed as SecretsStructure;
+      const parsedNested = parsed as any;
+
+      // Handle alternate naming: digital_ocean_spaces → spaces
+      if ('digital_ocean_spaces' in parsedNested && !('spaces' in parsedNested)) {
+        parsedNested.spaces = parsedNested.digital_ocean_spaces;
+        delete parsedNested.digital_ocean_spaces;
+      }
+
+      secrets = parsedNested as SecretsStructure;
     } else {
       // Legacy flat format - convert to nested
       const flat = parsed as FlatSecrets;
@@ -71,6 +82,10 @@ export function loadSecrets(): SecretsStructure {
           STRIPE_PRICE_ID: flat.STRIPE_PRICE_ID || '',
         },
         litellm: litellmKeys as { LITELLM_MASTER_KEY: string; [key: string]: string },
+        spaces: {
+          SPACES_ACCESS_KEY_ID: flat.SPACES_ACCESS_KEY_ID || '',
+          SPACES_SECRET_ACCESS_KEY: flat.SPACES_SECRET_ACCESS_KEY || '',
+        },
       };
     }
 
@@ -91,6 +106,14 @@ export function loadSecrets(): SecretsStructure {
     } else if (!secrets.litellm.LITELLM_MASTER_KEY) {
       secrets.litellm.LITELLM_MASTER_KEY = 'sk-1234-dummy-dev-key-replace-in-production';
       console.warn('⚠️  LITELLM_MASTER_KEY not found in secrets, using dummy value for dev');
+    }
+
+    // Validate Spaces credentials
+    if (!secrets.spaces?.SPACES_ACCESS_KEY_ID) {
+      throw new Error('Missing required secret: SPACES_ACCESS_KEY_ID');
+    }
+    if (!secrets.spaces?.SPACES_SECRET_ACCESS_KEY) {
+      throw new Error('Missing required secret: SPACES_SECRET_ACCESS_KEY');
     }
 
     return secrets;

@@ -83,7 +83,7 @@ tofu apply
 
 # Apply secrets to cluster (managed separately from manifests)
 echo "🔐 Applying secrets to cluster..."
-"$REPO_ROOT/scripts/apply-secrets.sh" seance-prod
+"$REPO_ROOT/scripts/apply-secrets.sh" seance-prod prod
 
 # Show deployment info
 echo ""

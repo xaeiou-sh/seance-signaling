@@ -17,6 +17,7 @@
     tilt
     cdk8s-cli
     doctl
+    # railway
     # Infrastructure as code
     opentofu
     ansible
@@ -41,6 +42,11 @@
     echo "☸️  Deploying to production Kubernetes cluster..."
     echo ""
     cd ${config.git.root} && ./scripts/deploy-production.sh
+  '';
+  scripts.railway-deploy.exec = ''
+    echo "  Deploying to production Railway cluster..."
+    echo ""
+    cd ${config.git.root} && ./scripts/deploy-railway.sh
   '';
 
   scripts.k8s-clean.exec = ''
