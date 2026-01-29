@@ -1,11 +1,10 @@
-# LiteLLM with custom configuration
 FROM ghcr.io/berriai/litellm:main-latest
 
-# Copy config file
+# Copy custom configuration
 COPY litellm-config.yaml /app/config.yaml
 
-# Expose port (Railway will set via PORT env var)
+# Expose port
 EXPOSE 4000
 
-# Run LiteLLM with config
+# Run LiteLLM with custom config
 CMD ["litellm", "--config", "/app/config.yaml", "--port", "4000", "--detailed_debug"]
