@@ -23,7 +23,7 @@ function getRequiredEnv(key: string): string {
 
 export const ENV = {
   POSTHOG_KEY: 'phc_XdFjlV2BPaqX9xf0OoYcB6htSR6hkwPghHXjr00BVgg',
-  POSTHOG_HOST: 'https://backend.seance.dev/beholder',
+  POSTHOG_HOST: 'https://beholder.seance.dev',
   // Backend URL - REQUIRED, must be set in devenv.nix
   BACKEND_URL: getRequiredEnv('VITE_BACKEND_URL'),
 } as const;

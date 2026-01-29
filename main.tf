@@ -10,299 +10,36 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 4.0"
     }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.0"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.0"
+    railway = {
+      source  = "terraform-community-providers/railway"
+      version = "~> 0.6.0"
     }
   }
 }
 
 provider "digitalocean" {}
 provider "cloudflare" {}
-
-# ============================================================================
-# DIGITALOCEAN KUBERNETES CLUSTER
-# ============================================================================
-
-resource "digitalocean_kubernetes_cluster" "seance" {
-  name    = "seance-production"
-  region  = var.region
-  version = var.kubernetes_version
-
-  # Node pool configuration
-  node_pool {
-    name       = "worker-pool"
-    size       = var.node_size
-    auto_scale = true
-    min_nodes  = var.min_nodes
-    max_nodes  = var.max_nodes
-  }
-
-  # High availability control plane (optional, adds ~$40/month)
-  ha = false
-
-  # Auto-upgrade for patch releases during maintenance window
-  auto_upgrade = true
-
-  tags = ["seance", "production"]
-}
-
-# Write kubeconfig to local file for kubectl access
-resource "local_file" "kubeconfig" {
-  content  = digitalocean_kubernetes_cluster.seance.kube_config[0].raw_config
-  filename = "${path.module}/.kube/config"
-}
-
-# Configure Kubernetes provider to use the cluster
-provider "kubernetes" {
-  host  = digitalocean_kubernetes_cluster.seance.endpoint
-  token = digitalocean_kubernetes_cluster.seance.kube_config[0].token
-  cluster_ca_certificate = base64decode(
-    digitalocean_kubernetes_cluster.seance.kube_config[0].cluster_ca_certificate
-  )
-}
-
-provider "helm" {
-  kubernetes {
-    host  = digitalocean_kubernetes_cluster.seance.endpoint
-    token = digitalocean_kubernetes_cluster.seance.kube_config[0].token
-    cluster_ca_certificate = base64decode(
-      digitalocean_kubernetes_cluster.seance.kube_config[0].cluster_ca_certificate
-    )
-  }
-}
-
-# ============================================================================
-# NGINX INGRESS CONTROLLER
-# ============================================================================
-
-# Install nginx-ingress-controller via Helm
-# This creates a DigitalOcean LoadBalancer automatically
-resource "helm_release" "nginx_ingress" {
-  name             = "nginx-ingress"
-  repository       = "https://kubernetes.github.io/ingress-nginx"
-  chart            = "ingress-nginx"
-  namespace        = "ingress-nginx"
-  create_namespace = true
-
-  # Wait for LoadBalancer to get external IP
-  wait    = true
-  timeout = 600 # 10 minutes
-
-  set {
-    name  = "controller.service.type"
-    value = "LoadBalancer"
-  }
-
-  # Use DO LoadBalancer annotations
-  set {
-    name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/do-loadbalancer-name"
-    value = "seance-lb"
-  }
-
-  depends_on = [digitalocean_kubernetes_cluster.seance]
-}
-
-# Get the LoadBalancer IP address
-data "kubernetes_service" "nginx_ingress" {
-  metadata {
-    name      = "nginx-ingress-ingress-nginx-controller"
-    namespace = "ingress-nginx"
-  }
-
-  depends_on = [helm_release.nginx_ingress]
-}
-
-# ============================================================================
-# DEPLOY KUBERNETES MANIFESTS
-# ============================================================================
-
-# Apply Kubernetes manifests using shared script
-# This ensures dev and prod use identical deployment logic
-resource "null_resource" "apply_manifests" {
-  triggers = {
-    cert_manager_sha = filesha256("${path.module}/kubernetes/cdk8s/dist/cert-manager.k8s.yaml")
-    seance_sha       = filesha256("${path.module}/kubernetes/cdk8s/dist/seance.k8s.yaml")
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      export KUBECONFIG=${path.module}/.kube/config
-      export WAIT_TIMEOUT=300
-      ${path.module}/kubernetes/apply-manifests.sh
-
-      # Wait for deployments to be ready
-      kubectl wait --for=condition=available --timeout=300s \
-        deployment/backend deployment/landing deployment/signaling deployment/valkey \
-        -n seance-prod
-    EOT
-  }
-
-  depends_on = [
-    digitalocean_kubernetes_cluster.seance,
-    local_file.kubeconfig,
-    helm_release.nginx_ingress,
-  ]
-}
-
-# ============================================================================
-# CLOUDFLARE DNS RECORDS
-# ============================================================================
-
-# Point all domains to the LoadBalancer IP
-resource "cloudflare_record" "backend" {
-  zone_id = var.cloudflare_zone_id
-  name    = "backend"
-  content = data.kubernetes_service.nginx_ingress.status[0].load_balancer[0].ingress[0].ip
-  type    = "A"
-  ttl     = 1
-  proxied = false
-}
-
-resource "cloudflare_record" "app" {
-  zone_id = var.cloudflare_zone_id
-  name    = "app"
-  content = data.kubernetes_service.nginx_ingress.status[0].load_balancer[0].ingress[0].ip
-  type    = "A"
-  ttl     = 1
-  proxied = false
-}
-
-resource "cloudflare_record" "root" {
-  zone_id = var.cloudflare_zone_id
-  name    = "@"
-  content = data.kubernetes_service.nginx_ingress.status[0].load_balancer[0].ingress[0].ip
-  type    = "A"
-  ttl     = 1
-  proxied = false
-}
-
-resource "cloudflare_record" "auth" {
-  zone_id = var.cloudflare_zone_id
-  name    = "auth"
-  content = data.kubernetes_service.nginx_ingress.status[0].load_balancer[0].ingress[0].ip
-  type    = "A"
-  ttl     = 1
-  proxied = false
-}
-
-resource "cloudflare_record" "litellm" {
-  zone_id = var.cloudflare_zone_id
-  name    = "litellm"
-  content = data.kubernetes_service.nginx_ingress.status[0].load_balancer[0].ingress[0].ip
-  type    = "A"
-  ttl     = 1
-  proxied = false
-}
+provider "railway" {}
 
 # ============================================================================
 # VARIABLES
 # ============================================================================
-
-variable "region" {
-  description = "DigitalOcean region"
-  type        = string
-  default     = "sfo3"
-}
-
-variable "kubernetes_version" {
-  description = "Kubernetes version"
-  type        = string
-  default     = "1.33.1-do.5" # Latest as of Jan 2026
-}
-
-variable "node_size" {
-  description = "Droplet size for worker nodes"
-  type        = string
-  default     = "s-2vcpu-4gb" # $24/month per node
-}
-
-variable "min_nodes" {
-  description = "Minimum number of worker nodes"
-  type        = number
-  default     = 2
-}
-
-variable "max_nodes" {
-  description = "Maximum number of worker nodes (autoscaling)"
-  type        = number
-  default     = 5
-}
 
 variable "cloudflare_zone_id" {
   description = "Cloudflare Zone ID for seance.dev"
   type        = string
 }
 
+variable "git_commit" {
+  description = "Git commit hash for Docker image tags"
+  type        = string
+  default     = "latest"
+}
+
 variable "environment" {
   description = "Environment name (prod or dev) - used as Spaces path prefix"
   type        = string
   default     = "prod"
-}
-
-variable "spaces_access_key_id" {
-  description = "DigitalOcean Spaces access key ID (create in DO console: API → Spaces Keys)"
-  type        = string
-  sensitive   = true
-}
-
-variable "spaces_secret_access_key" {
-  description = "DigitalOcean Spaces secret access key (create in DO console: API → Spaces Keys)"
-  type        = string
-  sensitive   = true
-}
-
-# ============================================================================
-# OUTPUTS
-# ============================================================================
-
-output "cluster_id" {
-  description = "DOKS cluster ID"
-  value       = digitalocean_kubernetes_cluster.seance.id
-}
-
-output "cluster_endpoint" {
-  description = "Kubernetes API endpoint"
-  value       = digitalocean_kubernetes_cluster.seance.endpoint
-}
-
-output "loadbalancer_ip" {
-  description = "LoadBalancer external IP"
-  value       = data.kubernetes_service.nginx_ingress.status[0].load_balancer[0].ingress[0].ip
-}
-
-output "backend_domain" {
-  description = "Backend domain"
-  value       = cloudflare_record.backend.hostname
-}
-
-output "app_domain" {
-  description = "App domain"
-  value       = cloudflare_record.app.hostname
-}
-
-output "root_domain" {
-  description = "Root domain"
-  value       = cloudflare_record.root.hostname
-}
-
-output "auth_domain" {
-  description = "Auth domain"
-  value       = cloudflare_record.auth.hostname
-}
-
-output "litellm_domain" {
-  description = "LiteLLM domain"
-  value       = cloudflare_record.litellm.hostname
-}
-
-output "kubeconfig_path" {
-  description = "Path to kubeconfig file"
-  value       = local_file.kubeconfig.filename
 }
 
 # ============================================================================
@@ -327,27 +64,316 @@ resource "digitalocean_spaces_bucket_cors_configuration" "seance_cdn" {
   }
 }
 
-# Create Kubernetes secret with Spaces credentials
-# Note: Access keys must be created manually in DigitalOcean console
-# and provided via terraform.tfvars or environment variables
-resource "kubernetes_secret" "spaces" {
-  metadata {
-    name      = "spaces-credentials"
-    namespace = "seance-prod"
-  }
+# ============================================================================
+# RAILWAY PROJECT & SERVICES
+# ============================================================================
 
-  data = {
-    SPACES_ACCESS_KEY_ID     = var.spaces_access_key_id
-    SPACES_SECRET_ACCESS_KEY = var.spaces_secret_access_key
-    SPACES_BUCKET            = digitalocean_spaces_bucket.seance_cdn.name
-    SPACES_REGION            = digitalocean_spaces_bucket.seance_cdn.region
-    SPACES_ENDPOINT          = "https://${digitalocean_spaces_bucket.seance_cdn.region}.digitaloceanspaces.com"
-    SPACES_CDN_ENDPOINT      = "https://${digitalocean_spaces_bucket.seance_cdn.name}.${digitalocean_spaces_bucket.seance_cdn.region}.cdn.digitaloceanspaces.com"
-    SPACES_PATH_PREFIX       = var.environment
-  }
+# Main Railway project
+resource "railway_project" "seance" {
+  name = "seance-production"
+}
 
-  # Create after manifests are applied (so namespace exists)
-  depends_on = [null_resource.apply_manifests]
+# Production environment
+resource "railway_environment" "production" {
+  name       = "production"
+  project_id = railway_project.seance.id
+}
+
+# Backend service
+resource "railway_service" "backend" {
+  name       = "backend"
+  project_id = railway_project.seance.id
+
+  source {
+    image = "fractalhuman1/seance-backend:${var.git_commit}"
+  }
+}
+
+# Backend environment variables
+resource "railway_variable" "backend_port" {
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.backend.id
+  name           = "PORT"
+  value          = "8765"
+}
+
+resource "railway_variable" "backend_redis_host" {
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.backend.id
+  name           = "REDIS_HOST"
+  value          = railway_service.valkey.id  # Railway internal service reference
+}
+
+resource "railway_variable" "backend_redis_port" {
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.backend.id
+  name           = "REDIS_PORT"
+  value          = "6379"
+}
+
+# Secrets for backend (loaded from SOPS via separate script)
+# These will be injected via railway-deploy.sh using Railway CLI
+# Cannot use Terraform because secrets are encrypted in SOPS
+
+# Landing page service
+resource "railway_service" "landing" {
+  name       = "landing"
+  project_id = railway_project.seance.id
+
+  source {
+    image = "fractalhuman1/seance-landing:${var.git_commit}"
+  }
+}
+
+resource "railway_variable" "landing_port" {
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.landing.id
+  name           = "PORT"
+  value          = "80"
+}
+
+# Signaling server (WebRTC)
+resource "railway_service" "signaling" {
+  name       = "signaling"
+  project_id = railway_project.seance.id
+
+  source {
+    image = "funnyzak/y-webrtc-signaling:latest"
+  }
+}
+
+resource "railway_variable" "signaling_port" {
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.signaling.id
+  name           = "PORT"
+  value          = "4444"
+}
+
+# Valkey (Redis) service
+resource "railway_service" "valkey" {
+  name       = "valkey"
+  project_id = railway_project.seance.id
+
+  source {
+    image = "valkey/valkey:latest"
+  }
+}
+
+resource "railway_variable" "valkey_port" {
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.valkey.id
+  name           = "PORT"
+  value          = "6379"
+}
+
+# LiteLLM service - custom image with built-in config
+resource "railway_service" "litellm" {
+  name       = "litellm"
+  project_id = railway_project.seance.id
+
+  source {
+    image = "fractalhuman1/seance-litellm:${var.git_commit}"
+  }
+}
+
+resource "railway_variable" "litellm_port" {
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.litellm.id
+  name           = "PORT"
+  value          = "4000"
+}
+
+# Beholder (PostHog proxy) - custom nginx image with built-in config
+resource "railway_service" "beholder" {
+  name       = "beholder"
+  project_id = railway_project.seance.id
+
+  source {
+    image = "fractalhuman1/seance-beholder:${var.git_commit}"
+  }
+}
+
+resource "railway_variable" "beholder_port" {
+  environment_id = railway_environment.production.id
+  service_id     = railway_service.beholder.id
+  name           = "PORT"
+  value          = "80"
+}
+
+# ============================================================================
+# CUSTOM DOMAINS
+# ============================================================================
+
+# Backend domain
+resource "railway_custom_domain" "backend" {
+  service_id = railway_service.backend.id
+  domain     = "backend.seance.dev"
+}
+
+# Landing domain (root)
+resource "railway_custom_domain" "landing" {
+  service_id = railway_service.landing.id
+  domain     = "seance.dev"
+}
+
+# Signaling domain
+resource "railway_custom_domain" "signaling" {
+  service_id = railway_service.signaling.id
+  domain     = "signaling.seance.dev"
+}
+
+# Beholder domain
+resource "railway_custom_domain" "beholder" {
+  service_id = railway_service.beholder.id
+  domain     = "beholder.seance.dev"
+}
+
+# LiteLLM domain
+resource "railway_custom_domain" "litellm" {
+  service_id = railway_service.litellm.id
+  domain     = "litellm.seance.dev"
+}
+
+# ============================================================================
+# RAILWAY CLI DATA SOURCES (Get CNAMEs)
+# ============================================================================
+
+# Get CNAME for backend
+data "external" "backend_cname" {
+  program = ["bash", "-c", <<-EOF
+    railway domain get backend.seance.dev --json 2>/dev/null | jq -r '{cname: .target}' || echo '{"cname": "pending"}'
+  EOF
+  ]
+
+  depends_on = [railway_custom_domain.backend]
+}
+
+# Get CNAME for landing
+data "external" "landing_cname" {
+  program = ["bash", "-c", <<-EOF
+    railway domain get seance.dev --json 2>/dev/null | jq -r '{cname: .target}' || echo '{"cname": "pending"}'
+  EOF
+  ]
+
+  depends_on = [railway_custom_domain.landing]
+}
+
+# Get CNAME for signaling
+data "external" "signaling_cname" {
+  program = ["bash", "-c", <<-EOF
+    railway domain get signaling.seance.dev --json 2>/dev/null | jq -r '{cname: .target}' || echo '{"cname": "pending"}'
+  EOF
+  ]
+
+  depends_on = [railway_custom_domain.signaling]
+}
+
+# Get CNAME for beholder
+data "external" "beholder_cname" {
+  program = ["bash", "-c", <<-EOF
+    railway domain get beholder.seance.dev --json 2>/dev/null | jq -r '{cname: .target}' || echo '{"cname": "pending"}'
+  EOF
+  ]
+
+  depends_on = [railway_custom_domain.beholder]
+}
+
+# Get CNAME for litellm
+data "external" "litellm_cname" {
+  program = ["bash", "-c", <<-EOF
+    railway domain get litellm.seance.dev --json 2>/dev/null | jq -r '{cname: .target}' || echo '{"cname": "pending"}'
+  EOF
+  ]
+
+  depends_on = [railway_custom_domain.litellm]
+}
+
+# ============================================================================
+# CLOUDFLARE DNS RECORDS
+# ============================================================================
+
+# Backend DNS
+resource "cloudflare_record" "backend" {
+  zone_id = var.cloudflare_zone_id
+  name    = "backend"
+  content = data.external.backend_cname.result.cname
+  type    = "CNAME"
+  ttl     = 1
+  proxied = true
+}
+
+# Landing page DNS (root domain)
+resource "cloudflare_record" "root" {
+  zone_id = var.cloudflare_zone_id
+  name    = "@"
+  content = data.external.landing_cname.result.cname
+  type    = "CNAME"
+  ttl     = 1
+  proxied = true
+}
+
+# Signaling DNS
+resource "cloudflare_record" "signaling" {
+  zone_id = var.cloudflare_zone_id
+  name    = "signaling"
+  content = data.external.signaling_cname.result.cname
+  type    = "CNAME"
+  ttl     = 1
+  proxied = true
+}
+
+# Beholder DNS
+resource "cloudflare_record" "beholder" {
+  zone_id = var.cloudflare_zone_id
+  name    = "beholder"
+  content = data.external.beholder_cname.result.cname
+  type    = "CNAME"
+  ttl     = 1
+  proxied = true
+}
+
+# LiteLLM DNS
+resource "cloudflare_record" "litellm" {
+  zone_id = var.cloudflare_zone_id
+  name    = "litellm"
+  content = data.external.litellm_cname.result.cname
+  type    = "CNAME"
+  ttl     = 1
+  proxied = true
+}
+
+# ============================================================================
+# OUTPUTS
+# ============================================================================
+
+output "railway_project_id" {
+  description = "Railway project ID"
+  value       = railway_project.seance.id
+}
+
+output "backend_domain" {
+  description = "Backend domain"
+  value       = "backend.seance.dev"
+}
+
+output "landing_domain" {
+  description = "Landing domain"
+  value       = "seance.dev"
+}
+
+output "signaling_domain" {
+  description = "Signaling domain"
+  value       = "signaling.seance.dev"
+}
+
+output "beholder_domain" {
+  description = "Beholder domain"
+  value       = "beholder.seance.dev"
+}
+
+output "litellm_domain" {
+  description = "LiteLLM domain"
+  value       = "litellm.seance.dev"
 }
 
 output "spaces_endpoint" {

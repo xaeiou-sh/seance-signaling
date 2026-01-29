@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Production Deployment Script for Seance
-# Usage: ./scripts/deploy-production.sh
+# Railway Production Deployment Script for Seance
+# Usage: ./scripts/deploy-railway.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Docker Hub username (update in kubernetes/cdk8s/src/config.ts if needed)
+# Docker Hub username
 DOCKER_USERNAME="fractalhuman1"
 
 # Get current git commit hash (short form)
@@ -36,6 +36,26 @@ if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
   exit 1
 fi
 
+if [ -z "${RAILWAY_TOKEN:-}" ]; then
+  echo "Error: RAILWAY_TOKEN not set"
+  echo "Get your token from: https://railway.app/account/tokens"
+  exit 1
+fi
+
+# Check Railway CLI is installed
+if ! command -v railway &> /dev/null; then
+  echo "Error: Railway CLI not found"
+  echo "Install with: brew install railway"
+  exit 1
+fi
+
+# Check Railway CLI is authenticated
+echo "🔐 Checking Railway authentication..."
+if ! railway whoami &> /dev/null; then
+  echo "Railway CLI not authenticated. Logging in..."
+  railway login
+fi
+
 # Docker Hub login check
 echo "🔐 Checking Docker Hub authentication..."
 if ! docker info | grep -q "Username: $DOCKER_USERNAME"; then
@@ -44,46 +64,52 @@ if ! docker info | grep -q "Username: $DOCKER_USERNAME"; then
 fi
 
 # Build and push backend image (cross-compile for linux/amd64)
-# Build context is repo root to allow access to shared code if needed
 echo "🏗️  Building and pushing backend image for linux/amd64..."
 docker buildx build \
   --platform linux/amd64 \
   -f "$REPO_ROOT/backend-trpc/Dockerfile" \
   -t "$DOCKER_USERNAME/seance-backend:$GIT_COMMIT" \
-  -t "$DOCKER_USERNAME/seance-backend:latest" \
   --push \
   "$REPO_ROOT"
 
 # Build and push landing page image (cross-compile for linux/amd64)
-# Build context is repo root to access both landing-page and backend-trpc for tRPC types
 echo "🏗️  Building and pushing landing page image for linux/amd64..."
 docker buildx build \
   --platform linux/amd64 \
   --build-arg VITE_BACKEND_URL=https://backend.seance.dev \
   -f "$REPO_ROOT/landing-page/Dockerfile" \
   -t "$DOCKER_USERNAME/seance-landing:$GIT_COMMIT" \
-  -t "$DOCKER_USERNAME/seance-landing:latest" \
   --push \
   "$REPO_ROOT"
 
-# Regenerate Kubernetes manifests with git commit hash (prod environment)
-echo "🔧 Regenerating Kubernetes manifests..."
-cd "$REPO_ROOT/kubernetes/cdk8s"
-export GIT_COMMIT
-export SEANCE_ENV=prod
-npm run synth
+# Build and push beholder (PostHog proxy) image
+echo "🏗️  Building and pushing beholder image..."
+docker buildx build \
+  --platform linux/amd64 \
+  -f "$REPO_ROOT/beholder/Dockerfile" \
+  -t "$DOCKER_USERNAME/seance-beholder:$GIT_COMMIT" \
+  --push \
+  "$REPO_ROOT/beholder"
 
-# Return to repo root
+# Build and push litellm image with custom config
+echo "🏗️  Building and pushing litellm image..."
+docker buildx build \
+  --platform linux/amd64 \
+  -f "$REPO_ROOT/litellm/Dockerfile" \
+  -t "$DOCKER_USERNAME/seance-litellm:$GIT_COMMIT" \
+  --push \
+  "$REPO_ROOT/litellm"
+
+# Run Terraform to create/update Railway infrastructure
+echo "🚀 Deploying to Railway via Terraform..."
 cd "$REPO_ROOT"
-
-# Run OpenTofu
-echo "🚀 Deploying to Kubernetes..."
+export TF_VAR_git_commit=$GIT_COMMIT
 tofu init -upgrade
 tofu apply
 
-# Apply secrets to cluster (managed separately from manifests)
-echo "🔐 Applying secrets to cluster..."
-"$REPO_ROOT/scripts/apply-secrets.sh" seance-prod prod
+# Apply secrets to Railway services
+echo "🔐 Applying secrets to Railway services..."
+"$REPO_ROOT/scripts/apply-railway-secrets.sh" production
 
 # Show deployment info
 echo ""
@@ -92,15 +118,19 @@ echo ""
 echo "Images deployed:"
 echo "  - $DOCKER_USERNAME/seance-backend:$GIT_COMMIT"
 echo "  - $DOCKER_USERNAME/seance-landing:$GIT_COMMIT"
+echo "  - $DOCKER_USERNAME/seance-beholder:$GIT_COMMIT"
+echo "  - $DOCKER_USERNAME/seance-litellm:$GIT_COMMIT"
 echo ""
 echo "Git commit: $GIT_COMMIT"
 echo "Git branch: $(git branch --show-current)"
 echo ""
 echo "Verify deployment:"
-echo "  export KUBECONFIG=$REPO_ROOT/.kube/config"
-echo "  kubectl get pods -n seance-prod"
-echo "  kubectl describe deployment backend -n seance-prod | grep Image"
+echo "  railway status"
+echo "  railway logs --service backend"
 echo ""
 echo "Test endpoints:"
 echo "  curl -I https://backend.seance.dev/"
 echo "  curl -I https://seance.dev/"
+echo "  curl -I https://signaling.seance.dev/"
+echo "  curl -I https://beholder.seance.dev/"
+echo "  curl -I https://litellm.seance.dev/"
