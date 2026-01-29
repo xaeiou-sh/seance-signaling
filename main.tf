@@ -42,6 +42,37 @@ variable "environment" {
   default     = "prod"
 }
 
+# Railway CNAME targets (retrieved manually from Railway dashboard)
+variable "railway_cname_backend" {
+  description = "Railway CNAME for backend.seance.dev (from Railway dashboard)"
+  type        = string
+  default     = "pending.railway.app"
+}
+
+variable "railway_cname_landing" {
+  description = "Railway CNAME for seance.dev (from Railway dashboard)"
+  type        = string
+  default     = "pending.railway.app"
+}
+
+variable "railway_cname_signaling" {
+  description = "Railway CNAME for signaling.seance.dev (from Railway dashboard)"
+  type        = string
+  default     = "pending.railway.app"
+}
+
+variable "railway_cname_beholder" {
+  description = "Railway CNAME for beholder.seance.dev (from Railway dashboard)"
+  type        = string
+  default     = "pending.railway.app"
+}
+
+variable "railway_cname_litellm" {
+  description = "Railway CNAME for litellm.seance.dev (from Railway dashboard)"
+  type        = string
+  default     = "pending.railway.app"
+}
+
 # ============================================================================
 # DIGITALOCEAN SPACES (Object Storage)
 # ============================================================================
@@ -235,68 +266,27 @@ resource "railway_custom_domain" "litellm" {
 }
 
 # ============================================================================
-# RAILWAY CLI DATA SOURCES (Get CNAMEs)
-# ============================================================================
-
-# Get CNAME for backend
-data "external" "backend_cname" {
-  program = ["bash", "-c", <<-EOF
-    railway domain get backend.seance.dev --json 2>/dev/null | jq -r '{cname: .target}' || echo '{"cname": "pending"}'
-  EOF
-  ]
-
-  depends_on = [railway_custom_domain.backend]
-}
-
-# Get CNAME for landing
-data "external" "landing_cname" {
-  program = ["bash", "-c", <<-EOF
-    railway domain get seance.dev --json 2>/dev/null | jq -r '{cname: .target}' || echo '{"cname": "pending"}'
-  EOF
-  ]
-
-  depends_on = [railway_custom_domain.landing]
-}
-
-# Get CNAME for signaling
-data "external" "signaling_cname" {
-  program = ["bash", "-c", <<-EOF
-    railway domain get signaling.seance.dev --json 2>/dev/null | jq -r '{cname: .target}' || echo '{"cname": "pending"}'
-  EOF
-  ]
-
-  depends_on = [railway_custom_domain.signaling]
-}
-
-# Get CNAME for beholder
-data "external" "beholder_cname" {
-  program = ["bash", "-c", <<-EOF
-    railway domain get beholder.seance.dev --json 2>/dev/null | jq -r '{cname: .target}' || echo '{"cname": "pending"}'
-  EOF
-  ]
-
-  depends_on = [railway_custom_domain.beholder]
-}
-
-# Get CNAME for litellm
-data "external" "litellm_cname" {
-  program = ["bash", "-c", <<-EOF
-    railway domain get litellm.seance.dev --json 2>/dev/null | jq -r '{cname: .target}' || echo '{"cname": "pending"}'
-  EOF
-  ]
-
-  depends_on = [railway_custom_domain.litellm]
-}
-
-# ============================================================================
 # CLOUDFLARE DNS RECORDS
+# ============================================================================
+#
+# IMPORTANT: After first 'tofu apply', Railway will generate CNAME targets.
+#
+# To get the CNAMEs:
+# 1. Go to Railway dashboard: https://railway.app/project/seance-production
+# 2. Click each service → Settings → Domains
+# 3. Copy the CNAME target (e.g., "abc123.up.railway.app")
+# 4. Add to terraform.tfvars:
+#    railway_cname_backend = "abc123.up.railway.app"
+#    railway_cname_landing = "def456.up.railway.app"
+#    # ... etc
+# 5. Run 'tofu apply' again to create DNS records
 # ============================================================================
 
 # Backend DNS
 resource "cloudflare_record" "backend" {
   zone_id = var.cloudflare_zone_id
   name    = "backend"
-  content = data.external.backend_cname.result.cname
+  content = var.railway_cname_backend
   type    = "CNAME"
   ttl     = 1
   proxied = true
@@ -306,7 +296,7 @@ resource "cloudflare_record" "backend" {
 resource "cloudflare_record" "root" {
   zone_id = var.cloudflare_zone_id
   name    = "@"
-  content = data.external.landing_cname.result.cname
+  content = var.railway_cname_landing
   type    = "CNAME"
   ttl     = 1
   proxied = true
@@ -316,7 +306,7 @@ resource "cloudflare_record" "root" {
 resource "cloudflare_record" "signaling" {
   zone_id = var.cloudflare_zone_id
   name    = "signaling"
-  content = data.external.signaling_cname.result.cname
+  content = var.railway_cname_signaling
   type    = "CNAME"
   ttl     = 1
   proxied = true
@@ -326,7 +316,7 @@ resource "cloudflare_record" "signaling" {
 resource "cloudflare_record" "beholder" {
   zone_id = var.cloudflare_zone_id
   name    = "beholder"
-  content = data.external.beholder_cname.result.cname
+  content = var.railway_cname_beholder
   type    = "CNAME"
   ttl     = 1
   proxied = true
@@ -336,7 +326,7 @@ resource "cloudflare_record" "beholder" {
 resource "cloudflare_record" "litellm" {
   zone_id = var.cloudflare_zone_id
   name    = "litellm"
-  content = data.external.litellm_cname.result.cname
+  content = var.railway_cname_litellm
   type    = "CNAME"
   ttl     = 1
   proxied = true

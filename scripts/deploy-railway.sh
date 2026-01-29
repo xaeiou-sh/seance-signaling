@@ -105,7 +105,7 @@ echo "🚀 Deploying to Railway via Terraform..."
 cd "$REPO_ROOT"
 export TF_VAR_git_commit=$GIT_COMMIT
 tofu init -upgrade
-tofu apply
+tofu apply -auto-approve
 
 # Apply secrets to Railway services
 echo "🔐 Applying secrets to Railway services..."
@@ -124,13 +124,39 @@ echo ""
 echo "Git commit: $GIT_COMMIT"
 echo "Git branch: $(git branch --show-current)"
 echo ""
-echo "Verify deployment:"
-echo "  railway status"
-echo "  railway logs --service backend"
-echo ""
-echo "Test endpoints:"
-echo "  curl -I https://backend.seance.dev/"
-echo "  curl -I https://seance.dev/"
-echo "  curl -I https://signaling.seance.dev/"
-echo "  curl -I https://beholder.seance.dev/"
-echo "  curl -I https://litellm.seance.dev/"
+
+# Check if this is first deployment (CNAMEs not set)
+if grep -q "railway_cname_backend" "$REPO_ROOT/terraform.tfvars" && \
+   ! grep -q '^railway_cname_backend = ".*\.up\.railway\.app"' "$REPO_ROOT/terraform.tfvars"; then
+  echo "⚠️  FIRST DEPLOYMENT - DNS Setup Required"
+  echo ""
+  echo "Railway services created, but Cloudflare DNS not configured yet."
+  echo ""
+  echo "Next steps:"
+  echo "  1. Get CNAMEs from Railway:"
+  echo "     railway domain list"
+  echo ""
+  echo "  2. Add CNAMEs to terraform.tfvars:"
+  echo "     railway_cname_backend   = \"abc123.up.railway.app\""
+  echo "     railway_cname_landing   = \"def456.up.railway.app\""
+  echo "     railway_cname_signaling = \"ghi789.up.railway.app\""
+  echo "     railway_cname_beholder  = \"jkl012.up.railway.app\""
+  echo "     railway_cname_litellm   = \"mno345.up.railway.app\""
+  echo ""
+  echo "  3. Run terraform again to create DNS:"
+  echo "     export TF_VAR_git_commit=$GIT_COMMIT"
+  echo "     tofu apply"
+  echo ""
+  echo "See RAILWAY-QUICKSTART.md for detailed instructions."
+else
+  echo "Verify deployment:"
+  echo "  railway status"
+  echo "  railway logs --service backend"
+  echo ""
+  echo "Test endpoints:"
+  echo "  curl -I https://backend.seance.dev/"
+  echo "  curl -I https://seance.dev/"
+  echo "  curl -I https://signaling.seance.dev/"
+  echo "  curl -I https://beholder.seance.dev/"
+  echo "  curl -I https://litellm.seance.dev/"
+fi

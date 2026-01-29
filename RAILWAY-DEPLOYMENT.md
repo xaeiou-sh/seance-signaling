@@ -92,25 +92,43 @@ Railway pricing scales with usage - expect $5-10/month at low traffic, up to $50
 
 ## Deployment Workflow
 
-### Full Deployment (Build + Deploy)
+### First Deployment (Two-Step Process)
 
+**Step 1: Deploy services**
 ```bash
-cd /Users/nicole/Documents/seance-signaling
 ./scripts/deploy-railway.sh
 ```
 
-This script will:
+This creates Railway services and custom domains, but DNS won't work yet.
+
+**Step 2: Configure DNS**
+1. Get CNAMEs from Railway: `railway domain list`
+2. Add CNAMEs to `terraform.tfvars`:
+   ```
+   railway_cname_backend = "abc123.up.railway.app"
+   railway_cname_landing = "def456.up.railway.app"
+   # ... etc
+   ```
+3. Apply again:
+   ```bash
+   export TF_VAR_git_commit=$(git rev-parse --short HEAD)
+   tofu apply
+   ```
+
+**See RAILWAY-QUICKSTART.md for detailed first-deployment instructions.**
+
+### Subsequent Deployments
+
+After initial setup, just run:
+```bash
+./scripts/deploy-railway.sh
+```
+
+This will:
 1. ✅ Get git commit hash
 2. ✅ Build and push 4 Docker images to Docker Hub
-   - `seance-backend:$GIT_COMMIT`
-   - `seance-landing:$GIT_COMMIT`
-   - `seance-beholder:$GIT_COMMIT`
-   - `seance-litellm:$GIT_COMMIT`
-3. ✅ Run `tofu apply` to create/update Railway services
-4. ✅ Create custom domains on Railway
-5. ✅ Retrieve CNAMEs from Railway CLI
-6. ✅ Update Cloudflare DNS records
-7. ✅ Apply secrets from SOPS to Railway services
+3. ✅ Run `tofu apply` to update Railway services
+4. ✅ Apply secrets from SOPS to Railway services
 
 ### Secrets-Only Update
 
@@ -136,20 +154,17 @@ docker build -t fractalhuman1/seance-backend:a1b2c3d .
 - Easy rollback: `TF_VAR_git_commit=old_hash tofu apply`
 - No ambiguity (unlike `:latest`)
 
-### CNAME Retrieval via Railway CLI
+### CNAME Management
 
-Railway Terraform provider can't retrieve CNAME records (known limitation), so we use Railway CLI:
+Railway Terraform provider can't retrieve CNAME records (known limitation). We use a simple manual approach:
 
-```hcl
-data "external" "backend_cname" {
-  program = ["bash", "-c", <<-EOF
-    railway domain get backend.seance.dev --json | jq -r '{cname: .target}'
-  EOF
-  ]
-}
-```
+1. First `tofu apply` creates Railway custom domains
+2. Railway generates CNAME targets (e.g., `abc123.up.railway.app`)
+3. You manually copy CNAMEs from Railway dashboard or CLI
+4. Add CNAMEs to `terraform.tfvars` as variables
+5. Second `tofu apply` creates Cloudflare DNS records
 
-This runs during `tofu apply` and gets the Railway CNAME (e.g., `xyz123.up.railway.app`) to configure Cloudflare DNS.
+**This is a one-time setup.** CNAMEs don't change after initial creation.
 
 ### Secrets Management
 

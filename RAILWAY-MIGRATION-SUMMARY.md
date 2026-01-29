@@ -183,28 +183,30 @@ Before considering migration complete, verify:
 
 **Status:** Known limitation (GitHub issue #11)
 
-**Workaround:** Use Railway CLI via Terraform `external` data source
+**Solution:** Manual two-step process:
+1. First `tofu apply` creates Railway custom domains
+2. Manually copy CNAMEs from Railway dashboard to `terraform.tfvars`
+3. Second `tofu apply` creates Cloudflare DNS records
 
-```hcl
-data "external" "backend_cname" {
-  program = ["bash", "-c", <<-EOF
-    railway domain get backend.seance.dev --json | jq -r '{cname: .target}'
-  EOF
-  ]
-}
+**Implementation:**
+- CNAMEs stored as Terraform variables in `terraform.tfvars`
+- One-time setup (CNAMEs don't change after creation)
+- Simpler and more reliable than CLI automation
+
+**Example:**
+```bash
+# Step 1: Deploy Railway services
+./scripts/deploy-railway.sh
+
+# Step 2: Get CNAMEs
+railway domain list
+
+# Step 3: Add to terraform.tfvars
+railway_cname_backend = "abc123.up.railway.app"
+
+# Step 4: Apply DNS
+tofu apply
 ```
-
-**Impact:** Requires Railway CLI installed and authenticated during `tofu apply`
-
-### Issue: First `tofu apply` may fail on CNAME retrieval
-
-**Status:** CNAMEs don't exist until custom domains are created
-
-**Workaround:** Run `tofu apply` twice:
-1. First run creates custom domains
-2. Second run retrieves CNAMEs and creates DNS records
-
-**Alternative:** Manually create Cloudflare records after first apply
 
 ## Next Steps
 
