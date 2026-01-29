@@ -2,85 +2,141 @@
 
 This guide outlines the steps required to complete the migration to DigitalOcean Spaces.
 
-## Improvements Over Initial Plan
-
-The implementation was improved based on infrastructure best practices:
-
-**Original Approach:**
-- ❌ Manual creation of global Spaces access keys
-- ❌ Hardcoded bucket metadata in SOPS secrets
-- ❌ Global access keys with permissions to all Spaces
-
-**Improved Approach:**
-- ✅ Terraform creates bucket-scoped access keys automatically
-- ✅ All metadata derived from Terraform resources
-- ✅ Least-privilege security (key only works for this bucket)
-- ✅ Zero manual steps for key management
-
 ## Architecture Overview
 
-### Infrastructure Management
-```
-Terraform creates:
-  ├── Spaces bucket (seance-cdn)
-  ├── Bucket-scoped access key (least privilege)
-  └── Kubernetes secret (spaces-credentials)
+### What Changed
 
-SOPS manages only:
-  ├── Stripe credentials (external service)
-  └── LiteLLM API keys (external service)
+**Before:**
+- Backend writes to container filesystem (`./releases/`, `./web/`)
+- Files lost on pod restart
+- Backend serves large files (100-300MB .dmg) through Node.js
+- Cannot scale horizontally (filesystem state)
+
+**After:**
+- Backend uploads to DigitalOcean Spaces during `/deploy`
+- Files persist indefinitely in object storage
+- CDN serves files directly (bypasses backend)
+- Fully stateless backend (can scale to 3+ replicas)
+
+### Infrastructure Management
+
+```
+Terraform manages:
+  ├── Spaces bucket (seance-cdn)
+  ├── CORS configuration
+  └── Kubernetes secret (spaces-credentials) with:
+      ├── Access credentials (from terraform.tfvars)
+      └── Derived metadata (bucket, region, endpoints)
+
+SOPS manages:
+  ├── Stripe credentials
+  └── LiteLLM API keys
 ```
 
 ### Deployment Flow
+
 ```
 GitHub Actions → POST /deploy → Backend uploads to Spaces → CDN serves files
 ```
 
-## Deployment Steps
+## Prerequisites (One-Time Setup)
 
-### 1. Apply Terraform Configuration
+### 1. Create Spaces Access Keys
 
-This creates the Spaces bucket, generates bucket-scoped credentials, and creates the Kubernetes secret automatically:
+Navigate to DigitalOcean Console:
+1. Go to **API** → **Spaces Keys**
+2. Click **Generate New Key**
+3. Name it: `seance-backend-prod`
+4. **Save the Access Key ID and Secret** (shown only once)
 
-```bash
-cd /Users/nicole/Documents/seance-signaling
-tofu apply
-```
+### 2. Add Credentials to Terraform
 
-Review the plan and confirm. Terraform will:
-- Create `seance-cdn` bucket in `sfo3` region
-- Generate bucket-scoped access key (only works for this bucket)
-- Create Kubernetes secret `spaces-credentials` in `seance-prod` namespace
-- Output CDN endpoint for reference
-
-### 2. Build and Push Backend
+Edit `terraform.tfvars`:
 
 ```bash
-cd backend-trpc
-npm install
-docker build -t fractalhuman1/seance-backend:spaces .
-docker push fractalhuman1/seance-backend:spaces
+nvim terraform.tfvars
 ```
 
-### 3. Deploy to Kubernetes
+Replace the placeholder values:
 
-The manifests already reference the Terraform-managed secret:
+```hcl
+spaces_access_key_id     = "DO00ABCD1234..."  # From step 1
+spaces_secret_access_key = "secret_key_here"   # From step 1
+```
+
+**Important:** This file is in `.gitignore` - never commit it to git!
+
+## Deployment (via k8s-deploy)
+
+Once the prerequisites are complete, just run:
 
 ```bash
-kubectl set image deployment/backend \
-  backend=fractalhuman1/seance-backend:spaces \
-  -n seance-prod
+k8s-deploy
 ```
 
-Verify rollout:
+This script (`scripts/deploy-production.sh`) will:
+
+1. ✅ Build Docker images (backend + landing)
+2. ✅ Regenerate Kubernetes manifests
+3. ✅ Run `tofu apply` which:
+   - Creates Spaces bucket (seance-cdn)
+   - Creates CORS configuration
+   - Creates Kubernetes secret with credentials + metadata
+   - Applies all manifests
+4. ✅ Apply SOPS secrets (Stripe, LiteLLM)
+
+**No manual steps required after initial setup!**
+
+## What Terraform Creates
+
+### 1. Spaces Bucket
+
+```hcl
+resource "digitalocean_spaces_bucket" "seance_cdn"
+  name   = "seance-cdn"
+  region = "sfo3"
+```
+
+### 2. CORS Configuration
+
+```hcl
+resource "digitalocean_spaces_bucket_cors_configuration" "seance_cdn"
+  allowed_methods = ["GET", "HEAD"]
+  allowed_origins = ["*"]
+```
+
+### 3. Kubernetes Secret
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: spaces-credentials
+  namespace: seance-prod
+data:
+  SPACES_ACCESS_KEY_ID: <from terraform.tfvars>
+  SPACES_SECRET_ACCESS_KEY: <from terraform.tfvars>
+  SPACES_BUCKET: seance-cdn
+  SPACES_REGION: sfo3
+  SPACES_ENDPOINT: https://sfo3.digitaloceanspaces.com
+  SPACES_CDN_ENDPOINT: https://seance-cdn.sfo3.cdn.digitaloceanspaces.com
+  SPACES_PATH_PREFIX: prod
+```
+
+**Key Point:** All metadata (bucket, region, endpoints) is derived from Terraform resources. Only the access keys come from `terraform.tfvars`.
+
+## Verification
+
+### 1. Check Deployment
 
 ```bash
-kubectl rollout status deployment/backend -n seance-prod
+export KUBECONFIG=/Users/nicole/Documents/seance-signaling/.kube/config
+kubectl get pods -n seance-prod
 ```
 
-### 4. Verify Deployment
+All pods should be `Running` with `1/1 Ready`.
 
-Check backend logs:
+### 2. Check Backend Logs
 
 ```bash
 kubectl logs -n seance-prod -l app=backend --tail=50
@@ -91,14 +147,18 @@ You should see:
 [Spaces] Initialized - bucket: seance-cdn, prefix: prod
 ```
 
-Test health endpoint:
+### 3. Test Health Endpoint
 
 ```bash
 curl https://backend.seance.dev/
-# Should return: {"status":"healthy","service":"seance-backend",...}
 ```
 
-### 5. Test File Upload
+Expected response:
+```json
+{"status":"healthy","service":"seance-backend","timestamp":"2026-01-27T..."}
+```
+
+### 4. Test File Upload
 
 Create test file:
 
@@ -115,7 +175,7 @@ curl -X POST https://backend.seance.dev/deploy \
   -d "{\"files\":[{\"path\":\"releases/test.txt\",\"content\":\"$(cat /tmp/test.b64)\"}]}"
 ```
 
-Expected response:
+Expected response includes CDN URL:
 ```json
 {
   "success": true,
@@ -124,8 +184,7 @@ Expected response:
     "path": "releases/test.txt",
     "url": "https://seance-cdn.sfo3.cdn.digitaloceanspaces.com/prod/releases/test.txt",
     "size": 123
-  }],
-  "timestamp": "2026-01-27T..."
+  }]
 }
 ```
 
@@ -133,34 +192,26 @@ Download from CDN:
 
 ```bash
 curl https://seance-cdn.sfo3.cdn.digitaloceanspaces.com/prod/releases/test.txt
-# Should return: Test Mon Jan 27 ...
 ```
 
-### 6. Verify Endpoints
-
-Test all update endpoints:
+### 5. Verify Endpoints
 
 ```bash
-# Version API
+# Version API (fetches from Spaces)
 curl https://backend.seance.dev/updates/api/version.json
 
 # Update manifest (for desktop app)
 curl https://backend.seance.dev/updates/darwin-arm64/latest-mac.yml
 ```
 
-Both should return data from Spaces (not 404).
+Both should return data (not 404).
 
-### 7. Scale Test
+### 6. Scale Test
 
-Scale backend to verify stateless operation:
+Verify stateless operation:
 
 ```bash
 kubectl scale deployment/backend --replicas=3 -n seance-prod
-```
-
-Wait for all pods to be ready:
-
-```bash
 kubectl get pods -n seance-prod -l app=backend
 ```
 
@@ -169,7 +220,6 @@ All 3 pods should show `Running` and `1/1 Ready`.
 Test upload with multiple replicas:
 
 ```bash
-# Upload a few test files
 for i in {1..5}; do
   echo "Test $i" | base64 | curl -X POST https://backend.seance.dev/deploy \
     -H "Content-Type: application/json" \
@@ -180,23 +230,7 @@ done
 
 All uploads should succeed regardless of which pod handles the request.
 
-## Configuration
-
-### Environment Variable
-
-The Terraform `environment` variable controls the Spaces path prefix:
-
-```hcl
-# terraform.tfvars or pass via CLI
-environment = "prod"  # Files stored in prod/ prefix
-```
-
-For development:
-```bash
-tofu apply -var="environment=dev"
-```
-
-### Bucket Structure
+## Bucket Structure
 
 ```
 seance-cdn/
@@ -231,32 +265,17 @@ curl https://backend.seance.dev/
 
 Recovery time: ~2 minutes (Kubernetes rolling update)
 
-## Security Benefits
-
-### Before
-- Global Spaces access keys with access to ALL Spaces buckets
-- Keys stored in SOPS with bucket metadata duplicated
-- Manual key rotation process
-
-### After
-- ✅ **Bucket-scoped keys**: Access limited to `seance-cdn` only
-- ✅ **Least privilege**: Key cannot access other Spaces buckets
-- ✅ **Infrastructure as code**: Keys managed by Terraform
-- ✅ **Automatic rotation**: `tofu taint` + `tofu apply` rotates keys
-- ✅ **Audit trail**: Terraform state tracks key lifecycle
-
-## Benefits Summary
-
-- ✅ **Horizontal scaling** - Backend is stateless, can run 3+ replicas
-- ✅ **Performance** - CDN serves files at edge locations
-- ✅ **Reliability** - Files persist across pod restarts
-- ✅ **Security** - Bucket-scoped credentials (least privilege)
-- ✅ **Automation** - Zero manual steps for key management
-- ✅ **Cost efficiency** - Only +$5/month for Spaces
-- ✅ **Code simplification** - Removed 150+ lines of file-serving code
-- ✅ **Infrastructure as code** - All configuration in Terraform
-
 ## Troubleshooting
+
+### "Missing required variable"
+
+**Error:**
+```
+Error: No value for required variable
+  on main.tf line X, in variable "spaces_access_key_id":
+```
+
+**Solution:** Add credentials to `terraform.tfvars` (see Prerequisites)
 
 ### Backend fails to start
 
@@ -266,36 +285,67 @@ kubectl logs -n seance-prod -l app=backend
 ```
 
 Common issues:
-- `SPACES_ACCESS_KEY_ID is required` → Terraform secret not created yet
-- `Failed to upload` → Check bucket permissions or key validity
+- `SPACES_ACCESS_KEY_ID is required` → Terraform secret not created
+- `Failed to upload` → Invalid credentials or bucket permissions
 
 ### Files not accessible via CDN
 
-1. Check bucket CORS configuration:
+1. Check bucket exists:
 ```bash
 tofu state show digitalocean_spaces_bucket.seance_cdn
 ```
 
-2. Verify ACL on uploaded files (should be `public-read`)
+2. Verify CORS configuration:
+```bash
+tofu state show digitalocean_spaces_bucket_cors_configuration.seance_cdn
+```
 
 3. Test direct Spaces endpoint (bypassing CDN):
 ```bash
 curl https://sfo3.digitaloceanspaces.com/seance-cdn/prod/releases/test.txt
 ```
 
-### Key rotation
+### Key Rotation
 
 If credentials are compromised:
 
+1. Generate new key in DigitalOcean console
+2. Update `terraform.tfvars` with new credentials
+3. Apply changes:
 ```bash
-# Mark key for recreation
-tofu taint digitalocean_spaces_bucket_key.seance_cdn
-
-# Apply to generate new key and update Kubernetes secret
 tofu apply
-
-# Restart backend to pick up new credentials
+```
+4. Restart backend:
+```bash
 kubectl rollout restart deployment/backend -n seance-prod
 ```
 
 Downtime: ~30 seconds (rolling update)
+
+## Benefits Summary
+
+- ✅ **Horizontal scaling** - Backend is stateless, can run 3+ replicas
+- ✅ **Performance** - CDN serves files at edge locations
+- ✅ **Reliability** - Files persist across pod restarts
+- ✅ **Automation** - Integrated into k8s-deploy workflow
+- ✅ **Infrastructure as code** - Metadata managed by Terraform
+- ✅ **Cost efficiency** - Only +$5/month for Spaces
+- ✅ **Code simplification** - Removed 150+ lines of file-serving code
+
+## Security Notes
+
+**Access Keys:**
+- Created manually in DigitalOcean console
+- Stored in `terraform.tfvars` (gitignored)
+- Passed to Terraform as sensitive variables
+- Never logged or exposed in outputs
+
+**Metadata:**
+- Bucket name, region, endpoints derived from Terraform
+- No hardcoded values in application code
+- Single source of truth (infrastructure)
+
+**Separation of Concerns:**
+- **Terraform:** Infrastructure credentials (Spaces)
+- **SOPS:** External service credentials (Stripe, LiteLLM)
+- Clear boundary between infrastructure and application secrets

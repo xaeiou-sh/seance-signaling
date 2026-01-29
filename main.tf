@@ -244,6 +244,18 @@ variable "environment" {
   default     = "prod"
 }
 
+variable "spaces_access_key_id" {
+  description = "DigitalOcean Spaces access key ID (create in DO console: API → Spaces Keys)"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_access_key" {
+  description = "DigitalOcean Spaces secret access key (create in DO console: API → Spaces Keys)"
+  type        = string
+  sensitive   = true
+}
+
 # ============================================================================
 # OUTPUTS
 # ============================================================================
@@ -300,6 +312,12 @@ output "kubeconfig_path" {
 resource "digitalocean_spaces_bucket" "seance_cdn" {
   name   = "seance-cdn"
   region = "sfo3"
+}
+
+# Separate CORS configuration (recommended approach)
+resource "digitalocean_spaces_bucket_cors_configuration" "seance_cdn" {
+  bucket = digitalocean_spaces_bucket.seance_cdn.id
+  region = digitalocean_spaces_bucket.seance_cdn.region
 
   cors_rule {
     allowed_headers = ["*"]
@@ -309,14 +327,9 @@ resource "digitalocean_spaces_bucket" "seance_cdn" {
   }
 }
 
-# Create bucket-scoped access key (least privilege)
-resource "digitalocean_spaces_bucket_key" "seance_cdn" {
-  bucket = digitalocean_spaces_bucket.seance_cdn.name
-  region = digitalocean_spaces_bucket.seance_cdn.region
-  name   = "seance-backend-${var.environment}"
-}
-
 # Create Kubernetes secret with Spaces credentials
+# Note: Access keys must be created manually in DigitalOcean console
+# and provided via terraform.tfvars or environment variables
 resource "kubernetes_secret" "spaces" {
   metadata {
     name      = "spaces-credentials"
@@ -324,8 +337,8 @@ resource "kubernetes_secret" "spaces" {
   }
 
   data = {
-    SPACES_ACCESS_KEY_ID     = digitalocean_spaces_bucket_key.seance_cdn.access_key_id
-    SPACES_SECRET_ACCESS_KEY = digitalocean_spaces_bucket_key.seance_cdn.secret_access_key
+    SPACES_ACCESS_KEY_ID     = var.spaces_access_key_id
+    SPACES_SECRET_ACCESS_KEY = var.spaces_secret_access_key
     SPACES_BUCKET            = digitalocean_spaces_bucket.seance_cdn.name
     SPACES_REGION            = digitalocean_spaces_bucket.seance_cdn.region
     SPACES_ENDPOINT          = "https://${digitalocean_spaces_bucket.seance_cdn.region}.digitaloceanspaces.com"
@@ -350,15 +363,4 @@ output "spaces_cdn_endpoint" {
 output "spaces_bucket_name" {
   description = "Spaces bucket name"
   value       = digitalocean_spaces_bucket.seance_cdn.name
-}
-
-output "spaces_access_key_id" {
-  description = "Spaces access key ID (bucket-scoped)"
-  value       = digitalocean_spaces_bucket_key.seance_cdn.access_key_id
-}
-
-output "spaces_secret_access_key" {
-  description = "Spaces secret access key (bucket-scoped)"
-  value       = digitalocean_spaces_bucket_key.seance_cdn.secret_access_key
-  sensitive   = true
 }
