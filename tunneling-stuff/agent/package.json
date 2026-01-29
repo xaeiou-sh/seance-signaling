@@ -1,0 +1,22 @@
+{
+  "name": "@seance/tunnel-agent",
+  "version": "0.1.0",
+  "description": "Tunnel agent for exposing local Y-Websocket server through relay",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "test": "tsx src/test.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "yamux-js": "^0.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.2"
+  }
+}
