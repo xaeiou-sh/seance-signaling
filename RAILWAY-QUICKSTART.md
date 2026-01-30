@@ -27,12 +27,19 @@ Simple two-step deployment process.
 
 ### Step 1: Initial Deploy (Creates Railway Services)
 
+**Option A: Build and deploy in one step (recommended for first deployment):**
 ```bash
 ./scripts/deploy-railway.sh
 ```
 
+**Option B: Build images separately, then deploy:**
+```bash
+./scripts/build-images.sh              # Build and push images
+./scripts/deploy-railway.sh --skip-build  # Deploy without rebuilding
+```
+
 This will:
-- Build and push 4 Docker images
+- Build and push 4 Docker images (unless --skip-build)
 - Create Railway project + 6 services
 - Create custom domains on Railway
 - Create DigitalOcean Spaces bucket
@@ -116,13 +123,54 @@ curl https://litellm.seance.dev/health
 
 ## Future Deployments
 
-After initial setup, just run:
+After initial setup:
 
+**Full deployment (build + deploy):**
 ```bash
 ./scripts/deploy-railway.sh
 ```
 
-This rebuilds images and updates Railway services. DNS stays the same (CNAMEs don't change).
+**Deploy Terraform changes only (faster):**
+```bash
+./scripts/deploy-railway.sh --skip-build
+```
+
+**Build images without deploying:**
+```bash
+./scripts/build-images.sh
+```
+
+DNS stays the same (CNAMEs don't change after initial setup).
+
+## Script Reference
+
+### build-images.sh
+Builds and pushes all Docker images to Docker Hub.
+
+**Usage:**
+```bash
+./scripts/build-images.sh              # Use current git commit
+./scripts/build-images.sh abc123f      # Use specific commit hash
+```
+
+**When to use:**
+- Building images for local testing
+- Pre-building images before deployment
+- CI/CD pipelines that separate build and deploy
+
+### deploy-railway.sh
+Deploys to Railway via Terraform, optionally building images first.
+
+**Usage:**
+```bash
+./scripts/deploy-railway.sh            # Build + deploy
+./scripts/deploy-railway.sh --skip-build  # Deploy only
+```
+
+**When to use:**
+- Full deployment (default)
+- Deploy Terraform changes without rebuilding images (--skip-build)
+- After manually building images with build-images.sh
 
 ## Update Secrets Only
 
