@@ -2,89 +2,79 @@
 set -euo pipefail
 
 # Railway Production Deployment Script for Seance
-# Usage: ./scripts/deploy-railway.sh
+# Usage: ./scripts/deploy-railway.sh [--skip-build]
+#
+# Builds Docker images and deploys to Railway via Terraform.
+# Use --skip-build to deploy without rebuilding images.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Docker Hub username
-DOCKER_USERNAME="fractalhuman1"
+# Parse arguments
+SKIP_BUILD=false
+if [[ "${1:-}" == "--skip-build" ]]; then
+  SKIP_BUILD=true
+fi
 
 # Get current git commit hash (short form)
 GIT_COMMIT=$(git rev-parse --short HEAD)
-echo "📦 Building images for commit: $GIT_COMMIT"
 
-# Check for uncommitted changes (warning only)
-if [ -n "$(git status --porcelain)" ]; then
-  echo "⚠️  Warning: You have uncommitted changes"
-  echo "   Deployed code won't match git history exactly"
-  echo "   Continuing deployment..."
+# Build Docker images (unless skipped)
+if [ "$SKIP_BUILD" = false ]; then
+  echo "🚀 Building Docker images..."
+  "$SCRIPT_DIR/build-images.sh" "$GIT_COMMIT"
+  echo ""
+else
+  echo "⏭️  Skipping image build (--skip-build flag set)"
+  echo "   Using existing images with tag: $GIT_COMMIT"
   echo ""
 fi
 
 # Verify required environment variables
+echo "🔍 Checking required environment variables..."
+MISSING_VARS=()
+
 if [ -z "${DIGITALOCEAN_TOKEN:-}" ]; then
-  echo "Error: DIGITALOCEAN_TOKEN not set"
-  exit 1
+  MISSING_VARS+=("DIGITALOCEAN_TOKEN")
 fi
 
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-  echo "Error: CLOUDFLARE_API_TOKEN not set"
-  exit 1
+  MISSING_VARS+=("CLOUDFLARE_API_TOKEN")
 fi
 
 if [ -z "${RAILWAY_TOKEN:-}" ]; then
-  echo "Error: RAILWAY_TOKEN not set"
-  echo "Get your token from: https://railway.app/account/tokens"
+  MISSING_VARS+=("RAILWAY_TOKEN")
+fi
+
+if [ -z "${SPACES_ACCESS_KEY_ID:-}" ]; then
+  MISSING_VARS+=("SPACES_ACCESS_KEY_ID")
+fi
+
+if [ -z "${SPACES_SECRET_ACCESS_KEY:-}" ]; then
+  MISSING_VARS+=("SPACES_SECRET_ACCESS_KEY")
+fi
+
+if [ ${#MISSING_VARS[@]} -gt 0 ]; then
+  echo ""
+  echo "❌ Error: Missing required environment variables:"
+  for var in "${MISSING_VARS[@]}"; do
+    echo "   - $var"
+  done
+  echo ""
+  echo "Set these variables before deploying:"
+  echo "  export DIGITALOCEAN_TOKEN=\"...\""
+  echo "  export CLOUDFLARE_API_TOKEN=\"...\""
+  echo "  export RAILWAY_TOKEN=\"...\""
+  echo "  export SPACES_ACCESS_KEY_ID=\"...\""
+  echo "  export SPACES_SECRET_ACCESS_KEY=\"...\""
+  echo ""
+  echo "Tip: Get Spaces credentials from SOPS:"
+  echo "  sops -d secrets/secrets.yaml | yq '.spaces'"
   exit 1
 fi
 
-# Note: Railway CLI check moved to apply-railway-secrets.sh
-# We don't need Railway CLI for building images or running Terraform
-
-# Docker Hub login check
-echo "🔐 Checking Docker Hub authentication..."
-if ! docker info | grep -q "Username: $DOCKER_USERNAME"; then
-  echo "Please log in to Docker Hub:"
-  docker login
-fi
-
-# Build and push backend image (cross-compile for linux/amd64)
-echo "🏗️  Building and pushing backend image for linux/amd64..."
-docker buildx build \
-  --platform linux/amd64 \
-  -f "$REPO_ROOT/backend-trpc/Dockerfile" \
-  -t "$DOCKER_USERNAME/seance-backend:$GIT_COMMIT" \
-  --push \
-  "$REPO_ROOT"
-
-# Build and push landing page image (cross-compile for linux/amd64)
-echo "🏗️  Building and pushing landing page image for linux/amd64..."
-docker buildx build \
-  --platform linux/amd64 \
-  --build-arg VITE_BACKEND_URL=https://backend.seance.dev \
-  -f "$REPO_ROOT/landing-page/Dockerfile" \
-  -t "$DOCKER_USERNAME/seance-landing:$GIT_COMMIT" \
-  --push \
-  "$REPO_ROOT"
-
-# Build and push beholder (PostHog proxy) image
-echo "🏗️  Building and pushing beholder image..."
-docker buildx build \
-  --platform linux/amd64 \
-  -f "$REPO_ROOT/beholder/Dockerfile" \
-  -t "$DOCKER_USERNAME/seance-beholder:$GIT_COMMIT" \
-  --push \
-  "$REPO_ROOT/beholder"
-
-# Build and push litellm image with custom config
-echo "🏗️  Building and pushing litellm image..."
-docker buildx build \
-  --platform linux/amd64 \
-  -f "$REPO_ROOT/litellm/Dockerfile" \
-  -t "$DOCKER_USERNAME/seance-litellm:$GIT_COMMIT" \
-  --push \
-  "$REPO_ROOT/litellm"
+echo "✅ All required environment variables set"
+echo ""
 
 # Run Terraform to create/update Railway infrastructure
 echo "🚀 Deploying to Railway via Terraform..."
@@ -94,6 +84,7 @@ tofu init -upgrade
 tofu apply -auto-approve
 
 # Apply secrets to Railway services
+echo ""
 echo "🔐 Applying secrets to Railway services..."
 "$REPO_ROOT/scripts/apply-railway-secrets.sh" production
 
@@ -102,10 +93,10 @@ echo ""
 echo "✅ Deployment complete!"
 echo ""
 echo "Images deployed:"
-echo "  - $DOCKER_USERNAME/seance-backend:$GIT_COMMIT"
-echo "  - $DOCKER_USERNAME/seance-landing:$GIT_COMMIT"
-echo "  - $DOCKER_USERNAME/seance-beholder:$GIT_COMMIT"
-echo "  - $DOCKER_USERNAME/seance-litellm:$GIT_COMMIT"
+echo "  - fractalhuman1/seance-backend:$GIT_COMMIT"
+echo "  - fractalhuman1/seance-landing:$GIT_COMMIT"
+echo "  - fractalhuman1/seance-beholder:$GIT_COMMIT"
+echo "  - fractalhuman1/seance-litellm:$GIT_COMMIT"
 echo ""
 echo "Git commit: $GIT_COMMIT"
 echo "Git branch: $(git branch --show-current)"
